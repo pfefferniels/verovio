@@ -95,6 +95,21 @@ public:
     void LayOutTranscription(bool force = false);
 
     /**
+     * Do the layout for a page in performed time, taking the position of each element from
+     * the <performance> of the document instead of from its notated duration.
+     * Returns false when the document cannot be laid out this way, in which case the caller
+     * should fall back to the ordinary layout.
+     */
+    bool LayOutPerformance();
+
+    /**
+     * Move the content of the page to its performed position.
+     * Separated from LayOutPerformance because it also has to be redone once the systems have
+     * been cast off, so that each system is measured at the position it will be drawn at.
+     */
+    bool ApplyPerformanceXPos();
+
+    /**
      * Lay out the content of the page (measures and their content) horizontally
      */
     void LayOutHorizontally();

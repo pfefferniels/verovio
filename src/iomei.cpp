@@ -4345,6 +4345,14 @@ bool MEIInput::ReadDoc(pugi::xml_node root)
         m_doc->m_back.append_copy(back);
     }
 
+    pugi::xml_node performance = music.child("performance");
+    if (!performance.empty()) {
+        this->ReadPerformance(m_doc, performance);
+        if (performance.next_sibling("performance")) {
+            LogWarning("Only first <performance> is processed");
+        }
+    }
+
     body = music.child("body");
     if (body.empty()) {
         LogError("No <body> element found in the MEI data");
@@ -9352,6 +9360,110 @@ bool MEIInput::ReadFacsimile(Doc *doc, pugi::xml_node facsimile)
         }
     }
     doc->SetFacsimile(vrvFacsimile);
+    return true;
+}
+
+bool MEIInput::ReadPerformance(Doc *doc, pugi::xml_node performance)
+{
+    assert(doc);
+
+    PerformanceData &performanceData = doc->GetPerformance();
+    for (pugi::xml_node child = performance.first_child(); child; child = child.next_sibling()) {
+        if (strcmp(child.name(), "recording") == 0) {
+            this->ReadRecording(&performanceData, child);
+        }
+        else {
+            LogWarning("Unsupported element <%s> in <performance>", child.name());
+        }
+    }
+
+    if (doc->GetOptions()->m_performanceAlignment.GetValue()) {
+        for (int i = 1; i <= performanceData.GetRecordingCount(); ++i) {
+            const PerformedRecording *recording = performanceData.GetRecording(StringFormat("%d", i));
+            if (!recording) continue;
+            LogInfo("Recording %d ('%s'): %d events, %.3fs to %.3fs", i,
+                recording->GetSource().empty() ? recording->GetID().c_str() : recording->GetSource().c_str(),
+                recording->GetEventCount(), recording->GetFirstOnsetMs() / 1000.0,
+                recording->GetLastOffsetMs() / 1000.0);
+        }
+    }
+
+    return true;
+}
+
+bool MEIInput::ReadRecording(PerformanceData *parent, pugi::xml_node recording)
+{
+    assert(parent);
+
+    PerformedRecording *vrvRecording = parent->AddRecording();
+    if (recording.attribute("xml:id")) {
+        vrvRecording->SetID(recording.attribute("xml:id").value());
+    }
+    if (recording.attribute("source")) {
+        // The @source is a URI reference - drop a leading '#' so that it can be matched directly
+        std::string source = recording.attribute("source").value();
+        if (!source.empty() && (source.at(0) == '#')) source = source.substr(1);
+        vrvRecording->SetSource(source);
+    }
+
+    for (pugi::xml_node child = recording.first_child(); child; child = child.next_sibling()) {
+        if (strcmp(child.name(), "when") == 0) {
+            this->ReadWhen(vrvRecording, child);
+        }
+        else if (strcmp(child.name(), "avFile") == 0 || strcmp(child.name(), "clip") == 0) {
+            // Not needed for the layout - silently ignored
+        }
+        else {
+            LogWarning("Unsupported element <%s> in <recording>", child.name());
+        }
+    }
+
+    return true;
+}
+
+bool MEIInput::ReadWhen(PerformedRecording *parent, pugi::xml_node when)
+{
+    assert(parent);
+
+    // A <when> without @data does not align anything in the score (pedal events use this form)
+    if (!when.attribute("data")) return true;
+
+    if (!when.attribute("absolute")) {
+        LogWarning("Skipping <when> without an @absolute attribute");
+        return false;
+    }
+
+    const std::string abstype = when.attribute("abstype") ? when.attribute("abstype").value() : "";
+    if (!abstype.empty() && (abstype != "smil")) {
+        LogWarning("Unsupported <when> @abstype '%s', the value is read as a time", abstype.c_str());
+    }
+
+    bool ok = false;
+    PerformedEvent event;
+    event.onsetMs = PerformanceData::ParseTimeToMs(when.attribute("absolute").value(), &ok);
+    if (!ok) {
+        LogWarning("Could not read the <when> @absolute value '%s'", when.attribute("absolute").value());
+        return false;
+    }
+
+    // The duration and the velocity are not part of MEI - they are carried in <extData> children
+    for (pugi::xml_node extData = when.child("extData"); extData; extData = extData.next_sibling("extData")) {
+        const std::string type = extData.attribute("type") ? extData.attribute("type").value() : "";
+        if (type == "duration") {
+            bool durationOk = false;
+            const double duration = PerformanceData::ParseTimeToMs(extData.text().as_string(), &durationOk);
+            if (durationOk && (duration >= 0.0)) event.durationMs = duration;
+        }
+        else if (type == "velocity") {
+            event.velocity = extData.text().as_int(VRV_UNSET);
+        }
+    }
+
+    // The @data is a URI reference to the aligned score element
+    std::string target = when.attribute("data").value();
+    if (!target.empty() && (target.at(0) == '#')) target = target.substr(1);
+    parent->AddEvent(target, event);
+
     return true;
 }
 

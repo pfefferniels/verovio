@@ -766,6 +766,11 @@ FunctorCode ResetHorizontalAlignmentFunctor::VisitLayerElement(LayerElement *lay
     layerElement->ResetGraceAlignment();
     layerElement->SetAlignmentLayerN(VRV_UNSET);
 
+    // The performed position takes precedence in LayerElement::GetDrawingX, so a second layout
+    // pass would otherwise measure the bounding boxes against the positions of the first
+    layerElement->m_drawingPerfX = VRV_UNSET;
+    layerElement->m_perfEvent = PerformedEvent();
+
     return FUNCTOR_CONTINUE;
 }
 

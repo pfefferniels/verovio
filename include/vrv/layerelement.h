@@ -17,6 +17,7 @@
 #include "fraction.h"
 #include "linkinginterface.h"
 #include "object.h"
+#include "performance.h"
 
 namespace vrv {
 
@@ -387,6 +388,13 @@ public:
     /** Absolute position X. This is used for facsimile (transcription) encoding */
     int m_drawingFacsX;
     int m_drawingFacsY; // This is used only for accid, syl
+    /** Absolute position X in performed time. Set by the CalcPerformanceXPosFunctor */
+    int m_drawingPerfX;
+    /**
+     * The performed event this element is drawn at.
+     * Held by value because interpolated events have no counterpart in the PerformanceData.
+     */
+    PerformedEvent m_perfEvent;
     /**
      * This stores a pointer to the cross-staff (if any) and the appropriate layer
      * See PrepareCrossStaffFunctor

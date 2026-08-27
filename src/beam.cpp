@@ -244,6 +244,14 @@ void BeamSegment::CalcSetStemValues(const Staff *staff, const Doc *doc, const Be
 
         coord->UpdateStemLength(
             stemmedInterface, y1, y2, stemAdjust, (beamInterface->m_drawingPlace == BEAMPLACE_mixed));
+
+        if (el->Is(CHORD)) {
+            Chord *chord = vrv_cast<Chord *>(el);
+            assert(chord);
+            if (chord->IsPerformanceSplit()) {
+                this->CalcSetSplitChordStems(chord, coord, staff, doc, beamInterface, stemAdjust);
+            }
+        }
     }
 
     if (doc->GetOptions()->m_beamFrenchStyle.GetValue() && (m_beamElementCoordRefs.size() > 2)) {
@@ -251,6 +259,41 @@ void BeamSegment::CalcSetStemValues(const Staff *staff, const Doc *doc, const Be
     }
 
     this->AdjustBeamToTremolos(doc, staff, beamInterface);
+}
+
+void BeamSegment::CalcSetSplitChordStems(Chord *chord, const BeamElementCoord *coord, const Staff *staff,
+    const Doc *doc, const BeamDrawingInterface *beamInterface, int stemAdjust)
+{
+    assert(chord);
+    assert(coord);
+    assert(coord->m_stem);
+
+    const data_STEMDIRECTION stemDir = coord->m_stem->GetDrawingStemDir();
+    const bool up = (stemDir == STEMDIRECTION_up);
+    const int stemWidth = doc->GetDrawingStemWidth(staff->m_drawingStaffSize);
+
+    for (Object *child : chord->GetList()) {
+        Note *note = vrv_cast<Note *>(child);
+        assert(note);
+        Stem *stem = note->GetDrawingStem();
+        if (!stem || (stem == chord->GetDrawingStem())) continue;
+
+        // The same cut-out offset BeamElementCoord::SetDrawingStemDir applies to the chord
+        const Point cutOut = up ? note->GetStemUpSE(doc, staff->m_drawingStaffSize, beamInterface->m_cueSize)
+                                : note->GetStemDownNW(doc, staff->m_drawingStaffSize, beamInterface->m_cueSize);
+        const int xRel = cutOut.x + (up ? -stemWidth / 2 : stemWidth / 2);
+
+        // Where the beam line stands above or below this note
+        const int stemX = note->GetDrawingX() + xRel;
+        const int y1 = coord->m_yBeam + static_cast<int>(m_beamSlope * (stemX - coord->m_x));
+        const int y2 = note->GetDrawingY() + cutOut.y;
+
+        stem->SetDrawingStemDir(stemDir);
+        stem->SetDrawingXRel(xRel);
+        stem->SetDrawingYRel(y2 - note->GetDrawingY());
+        stem->SetDrawingStemLen(y2 - y1);
+        stem->SetDrawingStemAdjust(-stemAdjust);
+    }
 }
 
 void BeamSegment::CalcSetStemValuesTab(const Staff *staff, const Doc *doc, const BeamDrawingInterface *beamInterface)
@@ -586,6 +629,27 @@ void BeamSegment::CalcBeamInit(
     for (int i = 0; i < elementCount; ++i) {
         BeamElementCoord *coord = m_beamElementCoordRefs.at(i);
         coord->m_x = coord->m_element->GetDrawingX();
+        // A rolled chord keeps its notated position while its notes move off to the moments they
+        // were played, possibly all to one side of it. The beam has to run between the stems that
+        // are actually drawn, so the coord follows the outermost note on its side.
+        if (coord->m_element->Is(CHORD)) {
+            Chord *chord = vrv_cast<Chord *>(coord->m_element);
+            assert(chord);
+            if (chord->IsPerformanceSplit()) {
+                const bool toTheRight = (i == elementCount - 1);
+                bool first = true;
+                for (const Object *child : chord->GetList()) {
+                    const int noteX = child->GetDrawingX();
+                    if (first) {
+                        coord->m_x = noteX;
+                        first = false;
+                    }
+                    else {
+                        coord->m_x = toTheRight ? std::max(coord->m_x, noteX) : std::min(coord->m_x, noteX);
+                    }
+                }
+            }
+        }
     }
 
     m_verticalCenter = staff->GetDrawingY()

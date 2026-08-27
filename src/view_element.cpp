@@ -1512,6 +1512,51 @@ void View::DrawMultiRpt(DeviceContext *dc, LayerElement *element, Layer *layer, 
     return;
 }
 
+void View::DrawPerformanceAttributes(DeviceContext *dc, const LayerElement *element)
+{
+    assert(dc);
+    assert(element);
+
+    const PerformedEvent &event = element->m_perfEvent;
+    const Options *options = m_doc->GetOptions();
+
+    // As with the ledger line dashes, data attributes are only valid in HTML5 embedded SVG
+    if (options->m_svgHtml5.GetValue()) {
+        dc->SetCustomGraphicAttributes("perf-onset", StringFormat("%.0f", event.onsetMs));
+        if (event.durationMs > 0.0) {
+            dc->SetCustomGraphicAttributes("perf-offset", StringFormat("%.0f", event.GetOffsetMs()));
+        }
+        if (event.velocity != VRV_UNSET) {
+            dc->SetCustomGraphicAttributes("perf-velocity", StringFormat("%d", event.velocity));
+        }
+        if (!event.matched) dc->SetCustomGraphicAttributes("perf-unaligned", "true");
+    }
+
+    if (!event.matched) {
+        // The recording says nothing about this note - it stands where the surrounding alignment
+        // suggests, and is marked as such
+        if (options->m_performanceUnmatched.GetValue() == PERFORMANCE_UNMATCHED_mark) {
+            dc->SetCustomGraphicColor("darkred");
+            dc->SetCustomGraphicOpacity(0.5);
+        }
+        return;
+    }
+
+    if (options->m_performanceVelocityOpacity.GetValue() && (event.velocity != VRV_UNSET)) {
+        int lowest = options->m_performanceVelocityMin.GetValue();
+        int highest = options->m_performanceVelocityMax.GetValue();
+        // Unless the range was given, use the one the recording covers
+        const PerformedRecording *recording = m_doc->GetSelectedRecording();
+        if ((lowest < 0) && recording) lowest = recording->GetMinVelocity();
+        if ((highest < 0) && recording) highest = recording->GetMaxVelocity();
+
+        double ratio = 1.0;
+        if (highest > lowest) ratio = double(event.velocity - lowest) / (highest - lowest);
+        ratio = std::min(1.0, std::max(0.0, ratio));
+        dc->SetCustomGraphicOpacity(PERFORMANCE_MIN_OPACITY + (1.0 - PERFORMANCE_MIN_OPACITY) * ratio);
+    }
+}
+
 void View::DrawNote(DeviceContext *dc, LayerElement *element, Layer *layer, Staff *staff, Measure *measure)
 {
     assert(dc);
@@ -1538,7 +1583,18 @@ void View::DrawNote(DeviceContext *dc, LayerElement *element, Layer *layer, Staf
 
     if (note->m_crossStaff) staff = note->m_crossStaff;
 
+    // Notes the recording knows nothing about are dropped when the option asks for it
+    if (m_doc->IsPerformanceAligned() && !note->m_perfEvent.matched
+        && (m_doc->GetOptions()->m_performanceUnmatched.GetValue() == PERFORMANCE_UNMATCHED_hide)) {
+        dc->StartGraphic(note, "", note->GetID());
+        note->SetEmptyBB();
+        dc->EndGraphic(note, this);
+        return;
+    }
+
     dc->StartGraphic(note, "", note->GetID());
+
+    if (m_doc->IsPerformanceAligned()) this->DrawPerformanceAttributes(dc, note);
 
     bool drawingCueSize = note->GetDrawingCueSize();
     int x = element->GetDrawingX();

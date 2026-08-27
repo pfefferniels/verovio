@@ -2,6 +2,10 @@
 
 ## [unreleased]
 
+* Performed-time layout: option group `--performance-*` laying a score out along the time of a
+  `<recording>` in the MEI `<performance>` element, with per-note positions taken from the
+  performance, systems broken by performed duration, velocity rendered as ink density, dashed
+  barlines, a ruler in seconds, and `data-perf-*` attributes on the notes with `--svg-html5`
 * Fix MusicXML `circle-x` notehead mapping to SMuFL U+E0B3
 
 ## [6.3.0] – 2026-08-19

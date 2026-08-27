@@ -140,6 +140,11 @@ public:
     void SetCustomGraphicColor(const std::string &color) override;
 
     /**
+     * Method for changing the opacity of a custom graphic
+     */
+    void SetCustomGraphicOpacity(double opacity) override;
+
+    /**
      * Method for adding custom graphic data-* attributes
      */
     void SetCustomGraphicAttributes(const std::string &data, const std::string &value) override;

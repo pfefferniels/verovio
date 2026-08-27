@@ -281,6 +281,11 @@ public:
     virtual void SetCustomGraphicColor(const std::string &color) {}
 
     /**
+     * Set the opacity of the current graphic node
+     */
+    virtual void SetCustomGraphicOpacity(double opacity) {}
+
+    /**
      * Method for adding custom graphic data-* attributes
      */
     virtual void SetCustomGraphicAttributes(const std::string &data, const std::string &value) {}

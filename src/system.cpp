@@ -75,6 +75,8 @@ void System::Reset()
     m_systemLeftMar = 0;
     m_systemRightMar = 0;
     m_drawingFacsX = VRV_UNSET;
+    m_drawingPerformanceOriginMs = 0.0;
+    m_drawingPerformanceOriginXRel = 0;
     m_drawingXRel = 0;
     m_drawingFacsY = VRV_UNSET;
     m_drawingYRel = 0;
@@ -102,6 +104,12 @@ bool System::IsSupportedChild(ClassId classId)
     else {
         return false;
     }
+}
+
+void System::SetPerformanceOrigin(double originMs, int originXRel)
+{
+    m_drawingPerformanceOriginMs = originMs;
+    m_drawingPerformanceOriginXRel = originXRel;
 }
 
 int System::GetDrawingX() const

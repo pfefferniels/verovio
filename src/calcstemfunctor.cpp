@@ -162,6 +162,13 @@ FunctorCode CalcStemFunctor::VisitChord(Chord *chord)
 
     chord->SetDrawingStemDir(stemDir);
 
+    // A rolled chord is stemmed note by note below, taking the direction just decided. Its own
+    // stem is virtual, so it is left with the length of a whole note, namely none.
+    if (chord->IsPerformanceSplit()) {
+        m_dur = DURATION_1;
+        return FUNCTOR_CONTINUE;
+    }
+
     // Position the stem to the bottom note when up
     if (stemDir == STEMDIRECTION_up) {
         stem->SetDrawingYRel(yMin - chord->GetDrawingY());
@@ -226,7 +233,8 @@ FunctorCode CalcStemFunctor::VisitNote(Note *note)
         return FUNCTOR_SIBLINGS;
     }
 
-    if (note->IsChordTone()) {
+    Chord *chordTone = note->IsChordTone();
+    if (chordTone && !chordTone->IsPerformanceSplit()) {
         assert(m_interface);
         return FUNCTOR_CONTINUE;
     }
@@ -250,7 +258,8 @@ FunctorCode CalcStemFunctor::VisitNote(Note *note)
     m_staff = staff;
     m_layer = layer;
     m_interface = note;
-    m_dur = note->GetActualDur();
+    // GetDrawingDur, so that a note of a rolled chord takes the duration of its chord
+    m_dur = note->GetDrawingDur();
     m_isGraceNote = note->IsGraceNote();
     m_isStemSameasSecondary = false;
 
@@ -263,7 +272,11 @@ FunctorCode CalcStemFunctor::VisitNote(Note *note)
     data_STEMDIRECTION layerStemDir;
     data_STEMDIRECTION stemDir = STEMDIRECTION_NONE;
 
-    if (note->HasStemSameasNote()) {
+    if (chordTone && chordTone->IsPerformanceSplit()) {
+        // A rolled chord is still one chord: its notes keep the direction the chord took
+        stemDir = chordTone->GetDrawingStemDir();
+    }
+    else if (note->HasStemSameasNote()) {
         stemDir = note->CalcStemDirForSameasNote(m_verticalCenter);
     }
     else if (stem->HasDir()) {

@@ -888,6 +888,12 @@ bool Toolkit::LoadData(const std::string &data, bool resetLogBuffer)
         breaks = (m_doc.HasFacsimile()) ? BREAKS_encoded : BREAKS_none;
     }
 
+    // With performance alignment the measure widths are performed times, so the ordinary cast-off
+    // breaks the systems by performed duration rather than by the width of the page
+    if (m_doc.IsPerformanceAligned()) {
+        breaks = (m_options->m_performanceSystemDuration.GetValue() > 0.0) ? BREAKS_auto : BREAKS_none;
+    }
+
     if (breaks != BREAKS_none) {
         if (input->GetLayoutInformation() == LAYOUT_ENCODED
             && (breaks == BREAKS_encoded || breaks == BREAKS_line || breaks == BREAKS_smart)) {
@@ -1370,12 +1376,12 @@ void Toolkit::PrintOptionUsageOutput(const vrv::Option *option, std::ostream &ou
 void Toolkit::PrintOptionUsage(const std::string &category, std::ostream &output) const
 {
     // map of all categories and expected string arguments for them
-    const std::map<vrv::OptionsCategory, std::string> categories
-        = { { vrv::OptionsCategory::Base, "base" }, { vrv::OptionsCategory::General, "general" },
-              { vrv::OptionsCategory::Json, "json" }, { vrv::OptionsCategory::Layout, "layout" },
-              { vrv::OptionsCategory::Margins, "margins" }, { vrv::OptionsCategory::Mensural, "mensural" },
-              { vrv::OptionsCategory::Midi, "midi" }, { vrv::OptionsCategory::Neume, "neume" },
-              { vrv::OptionsCategory::Selectors, "selectors" }, { vrv::OptionsCategory::Full, "full" } };
+    const std::map<vrv::OptionsCategory, std::string> categories = { { vrv::OptionsCategory::Base, "base" },
+        { vrv::OptionsCategory::General, "general" }, { vrv::OptionsCategory::Json, "json" },
+        { vrv::OptionsCategory::Layout, "layout" }, { vrv::OptionsCategory::Margins, "margins" },
+        { vrv::OptionsCategory::Mensural, "mensural" }, { vrv::OptionsCategory::Midi, "midi" },
+        { vrv::OptionsCategory::Neume, "neume" }, { vrv::OptionsCategory::Performance, "performance" },
+        { vrv::OptionsCategory::Selectors, "selectors" }, { vrv::OptionsCategory::Full, "full" } };
 
     output.precision(2);
     // display_version();

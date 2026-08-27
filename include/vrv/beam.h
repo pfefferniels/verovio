@@ -16,6 +16,7 @@
 namespace vrv {
 
 class BeamElementCoord;
+class Chord;
 class TabDurSym;
 class StaffAlignment;
 
@@ -148,6 +149,11 @@ private:
 
     // Helper to set the stem values
     void CalcSetStemValues(const Staff *staff, const Doc *doc, const BeamDrawingInterface *beamInterface);
+
+    // Helper to stem the notes of a rolled chord one by one, since the single chord stem cannot
+    // reach notes standing at different positions
+    void CalcSetSplitChordStems(Chord *chord, const BeamElementCoord *coord, const Staff *staff, const Doc *doc,
+        const BeamDrawingInterface *beamInterface, int stemAdjust);
 
     // Helper to set the stem values for tablature
     void CalcSetStemValuesTab(const Staff *staff, const Doc *doc, const BeamDrawingInterface *beamInterface);

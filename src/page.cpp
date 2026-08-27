@@ -47,6 +47,7 @@
 #include "calcdotsfunctor.h"
 #include "calcledgerlinesfunctor.h"
 #include "calcligatureorneumeposfunctor.h"
+#include "calcperformancexposfunctor.h"
 #include "calcslurdirectionfunctor.h"
 #include "calcspanningbeamspansfunctor.h"
 #include "calcstemfunctor.h"
@@ -227,13 +228,21 @@ void Page::LayOut()
         return;
     }
 
-    this->LayOutHorizontally();
-    this->JustifyHorizontally();
-    this->LayOutVertically();
-    this->JustifyVertically();
-
     Doc *doc = vrv_cast<Doc *>(this->GetFirstAncestor(DOC));
     assert(doc);
+
+    if (doc->IsPerformanceAligned() && this->LayOutPerformance()) {
+        // No horizontal justification - the horizontal axis is the performed time
+        this->LayOutVertically();
+        this->JustifyVertically();
+    }
+    else {
+        this->LayOutHorizontally();
+        this->JustifyHorizontally();
+        this->LayOutVertically();
+        this->JustifyVertically();
+    }
+
     if (doc->GetOptions()->m_svgBoundingBoxes.GetValue()) {
         View view;
         view.SetDoc(doc);
@@ -391,6 +400,48 @@ void Page::ResetAligners()
 
     CalcSpanningBeamSpansFunctor calcSpanningBeamSpans(doc);
     this->Process(calcSpanningBeamSpans);
+}
+
+bool Page::LayOutPerformance()
+{
+    Doc *doc = vrv_cast<Doc *>(this->GetFirstAncestor(DOC));
+    assert(doc);
+
+    // Make sure we have the correct page size
+    assert(doc->CheckPageSize(this));
+
+    const PerformedRecording *recording = doc->GetSelectedRecording();
+    if (!recording) return false;
+
+    // The ordinary horizontal layout runs first and in full. Only its positions after the left
+    // barline are thrown away - the gutter holding the clef and the signatures, the placement
+    // within a note and the bounding boxes are all wanted as they are.
+    this->LayOutHorizontally();
+
+    return this->ApplyPerformanceXPos();
+}
+
+bool Page::ApplyPerformanceXPos()
+{
+    Doc *doc = vrv_cast<Doc *>(this->GetFirstAncestor(DOC));
+    assert(doc);
+
+    const PerformedRecording *recording = doc->GetSelectedRecording();
+    if (!recording) return false;
+
+    CalcPerformanceXPosFunctor calcPerformanceXPos(doc, recording);
+    calcPerformanceXPos.SetPass(PERFORMANCE_PASS_collect);
+    this->Process(calcPerformanceXPos);
+    if (!calcPerformanceXPos.BuildMap()) return false;
+    calcPerformanceXPos.SetPass(PERFORMANCE_PASS_apply);
+    this->Process(calcPerformanceXPos);
+
+    // The ledger lines are recalculated once the notes stand at their performed position, since
+    // a dash is shared by the notes that happen to be near each other
+    CalcLedgerLinesFunctor calcLedgerLines(doc);
+    this->Process(calcLedgerLines);
+
+    return true;
 }
 
 void Page::LayOutHorizontally()
@@ -603,7 +654,8 @@ void Page::LayOutVertically()
     // Adjust system Y position
     AlignSystemsFunctor alignSystems(doc);
     alignSystems.SetShift(doc->m_drawingPageContentHeight);
-    alignSystems.SetSystemSpacing(doc->GetOptions()->m_spacingSystem.GetValue() * doc->GetDrawingUnit(100));
+    alignSystems.SetSystemSpacing(
+        doc->GetOptions()->m_spacingSystem.GetValue() * doc->GetDrawingUnit(100) + doc->GetPerformanceRulerHeight());
     this->Process(alignSystems);
 }
 

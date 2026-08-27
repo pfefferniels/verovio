@@ -744,6 +744,8 @@ public:
 protected:
     //
 private:
+    // True when the recording spreads the notes of the chord, so that they cannot share a stem
+    bool IsChordRolled(const Chord *chord) const;
     // Create stem if it does not exist
     Stem *EnsureStemExists(Stem *stem, Object *parent) const;
     // Create dots if they should exist, otherwise remove them

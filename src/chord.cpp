@@ -113,6 +113,8 @@ void Chord::Reset()
     this->ResetTiePresent();
     this->ResetVisibility();
 
+    m_performanceSplit = false;
+
     this->ClearNoteGroups();
 }
 

@@ -1192,16 +1192,20 @@ FunctorCode PrepareLayerElementPartsFunctor::VisitChord(Chord *chord)
     Flag *currentFlag = NULL;
     if (currentStem) currentFlag = vrv_cast<Flag *>(currentStem->GetFirst(FLAG));
 
+    // A rolled chord cannot keep a single stem, since its notes no longer stand at the same place
+    chord->SetPerformanceSplit(this->IsChordRolled(chord));
+
     currentStem = this->EnsureStemExists(currentStem, chord);
     currentStem->AttGraced::operator=(*chord);
     currentStem->FillAttributes(*chord);
 
     data_DURATION duration = chord->GetNoteOrChordDur(chord);
-    if ((duration < DURATION_2) || (chord->GetStemVisible() == BOOLEAN_false)) {
+    if ((duration < DURATION_2) || (chord->GetStemVisible() == BOOLEAN_false) || chord->IsPerformanceSplit()) {
         currentStem->IsVirtual(true);
     }
 
-    const bool shouldHaveFlag = ((duration > DURATION_4) && !chord->IsInBeam() && !chord->GetAncestorFTrem());
+    const bool shouldHaveFlag
+        = ((duration > DURATION_4) && !chord->IsInBeam() && !chord->GetAncestorFTrem() && !chord->IsPerformanceSplit());
     currentFlag = this->ProcessFlag(currentFlag, currentStem, shouldHaveFlag);
 
     chord->SetDrawingStem(currentStem);
@@ -1215,7 +1219,8 @@ FunctorCode PrepareLayerElementPartsFunctor::VisitChord(Chord *chord)
         assert(child->Is(NOTE));
         Note *note = vrv_cast<Note *>(child);
         assert(note);
-        note->SetDrawingStem(currentStem);
+        // A rolled chord leaves this to VisitNote, which gives the note a stem of its own
+        note->SetDrawingStem(chord->IsPerformanceSplit() ? NULL : currentStem);
     }
 
     /************ dots ***********/
@@ -1240,12 +1245,14 @@ FunctorCode PrepareLayerElementPartsFunctor::VisitNote(Note *note)
     Chord *chord = note->IsChordTone();
     if (currentStem) currentFlag = vrv_cast<Flag *>(currentStem->GetFirst(FLAG));
 
-    if (!note->IsChordTone() && !note->IsTabGrpNote()) {
+    const bool hasOwnStem = (!chord || chord->IsPerformanceSplit());
+    if (hasOwnStem && !note->IsTabGrpNote()) {
         currentStem = this->EnsureStemExists(currentStem, note);
         currentStem->AttGraced::operator=(*note);
         currentStem->FillAttributes(*note);
 
-        if (note->GetActualDur() < DURATION_2 || (note->GetStemVisible() == BOOLEAN_false)) {
+        // A note of a rolled chord takes its duration from the chord
+        if (note->GetDrawingDur() < DURATION_2 || (note->GetStemVisible() == BOOLEAN_false)) {
             currentStem->IsVirtual(true);
         }
     }
@@ -1272,11 +1279,11 @@ FunctorCode PrepareLayerElementPartsFunctor::VisitNote(Note *note)
     if (note->IsMensuralDur()) return FUNCTOR_CONTINUE;
 
     if (currentStem) {
-        const bool shouldHaveFlag = ((note->GetActualDur() > DURATION_4) && !note->IsInBeam()
-            && !note->GetAncestorFTrem() && !note->IsChordTone() && !note->IsTabGrpNote());
+        const bool shouldHaveFlag = ((note->GetDrawingDur() > DURATION_4) && !note->IsInBeam()
+            && !note->GetAncestorFTrem() && !note->IsTabGrpNote() && hasOwnStem);
         currentFlag = this->ProcessFlag(currentFlag, currentStem, shouldHaveFlag);
 
-        if (!chord) note->SetDrawingStem(currentStem);
+        if (hasOwnStem) note->SetDrawingStem(currentStem);
     }
 
     /************ Prepare the drawing cue size ************/
@@ -1386,6 +1393,31 @@ FunctorCode PrepareLayerElementPartsFunctor::VisitTuplet(Tuplet *tuplet)
         vrv_cast<LayerElement *>(tuplet->FindDescendantByComparison(&comparison, UNLIMITED_DEPTH, BACKWARD)));
 
     return FUNCTOR_CONTINUE;
+}
+
+bool PrepareLayerElementPartsFunctor::IsChordRolled(const Chord *chord) const
+{
+    assert(chord);
+
+    if (!m_doc->IsPerformanceAligned()) return false;
+
+    const PerformedRecording *recording = m_doc->GetSelectedRecording();
+    if (!recording) return false;
+
+    // Any spread at all separates the notes horizontally, so there is no threshold below which
+    // one stem would still reach them all
+    double earliest = 0.0;
+    double latest = 0.0;
+    bool first = true;
+    for (const Object *child : chord->GetList()) {
+        const PerformedEvent *event = recording->GetEvent(child->GetID());
+        if (!event) continue;
+        earliest = first ? event->onsetMs : std::min(earliest, event->onsetMs);
+        latest = first ? event->onsetMs : std::max(latest, event->onsetMs);
+        first = false;
+    }
+
+    return (!first && (latest > earliest));
 }
 
 Stem *PrepareLayerElementPartsFunctor::EnsureStemExists(Stem *stem, Object *parent) const

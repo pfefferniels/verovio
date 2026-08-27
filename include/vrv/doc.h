@@ -12,6 +12,7 @@
 #include "expansionmap.h"
 #include "facsimile.h"
 #include "options.h"
+#include "performance.h"
 #include "resources.h"
 #include "scoredef.h"
 
@@ -513,6 +514,38 @@ public:
     ///@}
 
     /**
+     * @name Getters for the performance data (the <performance> element)
+     */
+    ///@{
+    PerformanceData &GetPerformance() { return m_performance; }
+    const PerformanceData &GetPerformance() const { return m_performance; }
+    bool HasPerformance() const { return m_performance.HasRecordings(); }
+    ///@}
+
+    /**
+     * Return true when the document is to be laid out in performed time, which requires both the
+     * option to be set and a usable <performance> in the document.
+     */
+    bool IsPerformanceAligned() const;
+
+    /**
+     * Return the recording selected with the performanceRecording option, or NULL.
+     */
+    const PerformedRecording *GetSelectedRecording() const;
+
+    /**
+     * The width one system covers when laying out in performed time, from the duration asked
+     * for by the performanceSystemDuration option.
+     */
+    int GetPerformanceSystemWidth() const;
+
+    /**
+     * The room to reserve below each system for the ruler of the performed time, 0 when it is
+     * not drawn.
+     */
+    int GetPerformanceRulerHeight() const;
+
+    /**
      * Return true if the document has been cast off already.
      */
     bool IsCastOff() const { return m_isCastOff; }
@@ -763,6 +796,9 @@ private:
 
     /** Facsimile information */
     Facsimile *m_facsimile;
+
+    /** Performance information (the content of the <performance> element) */
+    PerformanceData m_performance;
 };
 
 } // namespace vrv

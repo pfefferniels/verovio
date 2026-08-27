@@ -209,6 +209,10 @@ void View::DrawSystem(DeviceContext *dc, System *system)
 
     this->DrawSystemChildren(dc, system, system);
 
+    if (m_doc->IsPerformanceAligned() && m_options->m_performanceRuler.GetValue()) {
+        this->DrawPerformanceRuler(dc, system);
+    }
+
     this->DrawSystemList(dc, system, SYL);
     this->DrawSystemList(dc, system, ANNOTSCORE);
     this->DrawSystemList(dc, system, BEAMSPAN);
@@ -231,6 +235,67 @@ void View::DrawSystem(DeviceContext *dc, System *system)
     this->DrawSystemList(dc, system, ENDING);
 
     dc->EndGraphic(system, this);
+}
+
+void View::DrawPerformanceRuler(DeviceContext *dc, System *system)
+{
+    assert(dc);
+    assert(system);
+
+    const double interval = m_options->m_performanceRulerInterval.GetValue();
+    if (interval <= 0.0) return;
+
+    const int unit = m_doc->GetDrawingUnit(100);
+    const double unitsPerSecond = m_options->m_performanceScale.GetValue() * unit;
+    if (unitsPerSecond <= 0.0) return;
+
+    const int x1 = system->GetDrawingX() + system->GetPerformanceOriginXRel();
+    const int width = system->m_drawingTotalWidth - system->GetPerformanceOriginXRel();
+    if (width <= 0) return;
+
+    // The ruler sits below the system, in the room reserved by Doc::GetPerformanceRulerHeight
+    const int y = system->GetDrawingY() - system->GetHeight() - unit * 2;
+
+    const int lineWidth = m_doc->GetDrawingStaffLineWidth(100);
+
+    dc->StartCustomGraphic("performanceRuler");
+    dc->SetPen(lineWidth, PEN_SOLID);
+    dc->SetBrush(1.0, COLOR_NONE);
+
+    this->DrawFilledRectangle(dc, x1, y, x1 + width, y + lineWidth);
+
+    // Ticks are labelled with the time from the start of the recording, so that a system can be
+    // read against the recording itself
+    const double originSeconds = system->GetPerformanceOriginMs() / 1000.0;
+    const double firstTick = ceil(originSeconds / interval) * interval;
+    const int labelEvery = (interval < 1.0) ? static_cast<int>(1.0 / interval + 0.5) : 1;
+
+    FontInfo rulerTxt;
+    if (!dc->UseGlobalStyling()) {
+        rulerTxt.SetFaceName(m_doc->GetResources().GetTextFont());
+    }
+    rulerTxt.SetPointSize(m_doc->GetDrawingLyricFont(55)->GetPointSize());
+
+    int index = 0;
+    for (double t = firstTick; (t - originSeconds) * unitsPerSecond <= width; t += interval, ++index) {
+        const int x = x1 + static_cast<int>((t - originSeconds) * unitsPerSecond);
+        const bool labelled = (index % labelEvery == 0);
+        const int tickHeight = labelled ? unit * 2 : unit;
+        this->DrawFilledRectangle(dc, x, y, x + lineWidth, y - tickHeight);
+
+        if (labelled) {
+            dc->SetFont(&rulerTxt);
+            const int textY = y - tickHeight - unit * 5 / 2;
+            dc->StartText(this->ToDeviceContextX(x), this->ToDeviceContextY(textY), HORIZONTALALIGNMENT_center);
+            dc->DrawText(StringFormat("%g", t), U"");
+            dc->EndText();
+            dc->ResetFont();
+        }
+    }
+
+    dc->ResetPen();
+    dc->ResetBrush();
+    dc->EndCustomGraphic();
 }
 
 void View::DrawSystemList(DeviceContext *dc, System *system, const ClassId classId)
@@ -826,6 +891,15 @@ void View::DrawBarLine(DeviceContext *dc, int yTop, int yBottom, BarLine *barLin
     Staff *staff = barLine->GetAncestorStaff(ANCESTOR_ONLY, false);
     const int staffSize = (staff) ? staff->GetDrawingStaffNotationSize() : 100;
     const int unit = m_doc->GetDrawingUnit(staffSize);
+
+    // In performed time a barline has no fixed position of its own - it stands wherever the
+    // downbeat was played, so it is drawn as a hint rather than as a boundary
+    if (m_doc->IsPerformanceAligned()) {
+        if (form == BARRENDITION_single)
+            form = BARRENDITION_dashed;
+        else if (form == BARRENDITION_dbl)
+            form = BARRENDITION_dbldashed;
+    }
 
     const int x = barLine->GetDrawingX();
     const int barLineWidth = m_doc->GetDrawingBarLineWidth(staffSize);

@@ -56,6 +56,9 @@ const std::map<int, std::string> Option::s_multiRestStyle = { { MULTIRESTSTYLE_a
 const std::map<int, std::string> Option::s_pedalStyle = { { PEDALSTYLE_NONE, "auto" }, { PEDALSTYLE_line, "line" },
     { PEDALSTYLE_pedstar, "pedstar" }, { PEDALSTYLE_altpedstar, "altpedstar" } };
 
+const std::map<int, std::string> Option::s_performanceUnmatched = { { PERFORMANCE_UNMATCHED_mark, "mark" },
+    { PERFORMANCE_UNMATCHED_plain, "plain" }, { PERFORMANCE_UNMATCHED_hide, "hide" } };
+
 const std::map<int, std::string> Option::s_systemDivider = { { SYSTEMDIVIDER_none, "none" },
     { SYSTEMDIVIDER_auto, "auto" }, { SYSTEMDIVIDER_left, "left" }, { SYSTEMDIVIDER_left_right, "left-right" } };
 
@@ -1923,6 +1926,61 @@ Options::Options()
     m_liquescentWithoutTails.SetInfo("Liquescent without tails", "Render liquescent head without tails");
     m_liquescentWithoutTails.Init(false);
     this->Register(&m_liquescentWithoutTails, "liquescentWithoutTails", &m_neume);
+
+    /********* Performance *********/
+
+    m_performance.SetLabel("Performance alignment options", "8-performance");
+    m_performance.SetCategory(OptionsCategory::Performance);
+    m_grps.push_back(&m_performance);
+
+    m_performanceAlignment.SetInfo("Performance alignment",
+        "Lay out the score in performed time, taking the position of each note from the "
+        "<performance> element of the MEI instead of from its notated duration");
+    m_performanceAlignment.Init(false);
+    this->Register(&m_performanceAlignment, "performanceAlignment", &m_performance);
+
+    m_performanceRecording.SetInfo("Performance recording",
+        "The <recording> to lay out, given as a 1-based index or as its @xml:id or @source; "
+        "empty selects the first one");
+    m_performanceRecording.Init("");
+    this->Register(&m_performanceRecording, "performanceRecording", &m_performance);
+
+    m_performanceScale.SetInfo("Performance scale", "The width given to one second of performed time, in MEI units");
+    m_performanceScale.Init(16.0, 0.1, 1000.0);
+    this->Register(&m_performanceScale, "performanceScale", &m_performance);
+
+    m_performanceSystemDuration.SetInfo("Performance system duration",
+        "The performed duration of one system, in seconds; 0 puts everything on a single system");
+    m_performanceSystemDuration.Init(10.0, 0.0, 3600.0);
+    this->Register(&m_performanceSystemDuration, "performanceSystemDuration", &m_performance);
+
+    m_performanceUnmatched.SetInfo(
+        "Performance unmatched notes", "How to render notes that have no <when> in the selected recording");
+    m_performanceUnmatched.Init(PERFORMANCE_UNMATCHED_mark, &Option::s_performanceUnmatched);
+    this->Register(&m_performanceUnmatched, "performanceUnmatched", &m_performance);
+
+    m_performanceVelocityOpacity.SetInfo(
+        "Performance velocity opacity", "Render the velocity of each performed note as ink density");
+    m_performanceVelocityOpacity.Init(true);
+    this->Register(&m_performanceVelocityOpacity, "performanceVelocityOpacity", &m_performance);
+
+    m_performanceVelocityMin.SetInfo("Performance velocity minimum",
+        "The velocity rendered with the lowest opacity, or -1 to take it from the recording");
+    m_performanceVelocityMin.Init(-1, -1, 127);
+    this->Register(&m_performanceVelocityMin, "performanceVelocityMin", &m_performance);
+
+    m_performanceVelocityMax.SetInfo(
+        "Performance velocity maximum", "The velocity rendered fully opaque, or -1 to take it from the recording");
+    m_performanceVelocityMax.Init(-1, -1, 127);
+    this->Register(&m_performanceVelocityMax, "performanceVelocityMax", &m_performance);
+
+    m_performanceRuler.SetInfo("Performance ruler", "Draw a ruler of the performed time below each system");
+    m_performanceRuler.Init(true);
+    this->Register(&m_performanceRuler, "performanceRuler", &m_performance);
+
+    m_performanceRulerInterval.SetInfo("Performance ruler interval", "The spacing of the ruler ticks, in seconds");
+    m_performanceRulerInterval.Init(1.0, 0.01, 600.0);
+    this->Register(&m_performanceRulerInterval, "performanceRulerInterval", &m_performance);
 
     /********* Method JSON options to the command-line *********/
 

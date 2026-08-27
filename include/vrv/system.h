@@ -88,6 +88,17 @@ public:
     int GetHeight() const;
 
     /**
+     * @name The performed time the system starts at, and the offset at which it is drawn, i.e.
+     * after the gutter holding the clef and the signatures.
+     * Set by the CalcPerformanceXPosFunctor.
+     */
+    ///@{
+    void SetPerformanceOrigin(double originMs, int originXRel);
+    double GetPerformanceOriginMs() const { return m_drawingPerformanceOriginMs; }
+    int GetPerformanceOriginXRel() const { return m_drawingPerformanceOriginXRel; }
+    ///@}
+
+    /**
      * Return the top (first) visible staff in the measure (if any).
      * Takes into account system optimization
      */
@@ -212,6 +223,13 @@ public:
     ///@{
     int m_drawingTotalWidth;
     int m_drawingJustifiableWidth;
+    ///@}
+    /**
+     * @name The performed time origin of the system, see SetPerformanceOrigin.
+     */
+    ///@{
+    double m_drawingPerformanceOriginMs;
+    int m_drawingPerformanceOriginXRel;
     ///@}
     /**
      * @name The cast off width of the system.

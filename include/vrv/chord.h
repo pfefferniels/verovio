@@ -132,6 +132,15 @@ public:
     void ResetAccidList();
 
     /**
+     * @name Whether the recording shows the chord rolled, in which case its notes are stemmed one
+     * by one instead of sharing the chord stem. Set by the PrepareLayerElementPartsFunctor.
+     */
+    ///@{
+    void SetPerformanceSplit(bool split) { m_performanceSplit = split; }
+    bool IsPerformanceSplit() const { return m_performanceSplit; }
+    ///@}
+
+    /**
      * Return information about a note's position in the chord
      */
     ///@{
@@ -223,6 +232,9 @@ protected:
 public:
     //
 private:
+    /** See SetPerformanceSplit */
+    bool m_performanceSplit;
+
     /**
      * The list of chord note groups
      */

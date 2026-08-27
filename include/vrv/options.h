@@ -87,6 +87,12 @@ enum option_MULTIRESTSTYLE {
     MULTIRESTSTYLE_symbols
 };
 
+enum option_PERFORMANCE_UNMATCHED {
+    PERFORMANCE_UNMATCHED_mark = 0,
+    PERFORMANCE_UNMATCHED_plain,
+    PERFORMANCE_UNMATCHED_hide
+};
+
 enum option_SYSTEMDIVIDER { SYSTEMDIVIDER_none = 0, SYSTEMDIVIDER_auto, SYSTEMDIVIDER_left, SYSTEMDIVIDER_left_right };
 
 enum option_SMUFLTEXTFONT { SMUFLTEXTFONT_embedded = 0, SMUFLTEXTFONT_linked, SMUFLTEXTFONT_none };
@@ -95,7 +101,20 @@ enum option_SMUFLTEXTFONT { SMUFLTEXTFONT_embedded = 0, SMUFLTEXTFONT_linked, SM
 // Option
 //----------------------------------------------------------------------------
 
-enum class OptionsCategory { None, Base, General, Json, Layout, Mensural, Margins, Midi, Neume, Selectors, Full };
+enum class OptionsCategory {
+    None,
+    Base,
+    General,
+    Json,
+    Layout,
+    Mensural,
+    Margins,
+    Midi,
+    Neume,
+    Performance,
+    Selectors,
+    Full
+};
 
 /**
  * This class is a base class of each styling parameter
@@ -157,6 +176,7 @@ public:
     static const std::map<int, std::string> s_mensuralResponsiveness;
     static const std::map<int, std::string> s_multiRestStyle;
     static const std::map<int, std::string> s_pedalStyle;
+    static const std::map<int, std::string> s_performanceUnmatched;
     static const std::map<int, std::string> s_systemDivider;
     static const std::map<int, std::string> s_smuflTextFont;
 
@@ -886,6 +906,22 @@ public:
     OptionBool m_gabcExtendedSymbols;
     OptionInt m_gabcStaffLines;
     OptionBool m_liquescentWithoutTails;
+
+    /**
+     * Performance
+     */
+    OptionGrp m_performance;
+
+    OptionBool m_performanceAlignment;
+    OptionString m_performanceRecording;
+    OptionDbl m_performanceScale;
+    OptionDbl m_performanceSystemDuration;
+    OptionIntMap m_performanceUnmatched;
+    OptionBool m_performanceVelocityOpacity;
+    OptionInt m_performanceVelocityMin;
+    OptionInt m_performanceVelocityMax;
+    OptionBool m_performanceRuler;
+    OptionDbl m_performanceRulerInterval;
 
     /**
      * Additional options for passing method JSON options to the command-line

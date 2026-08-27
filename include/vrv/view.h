@@ -207,6 +207,9 @@ protected:
     void DrawBarLine(DeviceContext *dc, int yTop, int yBottom, BarLine *barLine, data_BARRENDITION form,
         bool inStaffSpace = false, bool eraseIntersections = false);
     void DrawBarLineDots(DeviceContext *dc, Staff *staff, BarLine *barLine);
+
+    /** Draw the ruler of the performed time below a system */
+    void DrawPerformanceRuler(DeviceContext *dc, System *system);
     void DrawLedgerLines(DeviceContext *dc, Staff *staff, const ArrayOfLedgerLines &lines, bool below, bool cueSize);
     void DrawMeasure(DeviceContext *dc, Measure *measure, System *system);
     void DrawMeterSigGrp(DeviceContext *dc, Layer *layer, Staff *staff);
@@ -317,6 +320,12 @@ protected:
     void DrawMultiRest(DeviceContext *dc, LayerElement *element, Layer *layer, Staff *staff, Measure *measure);
     void DrawMultiRpt(DeviceContext *dc, LayerElement *element, Layer *layer, Staff *staff, Measure *measure);
     void DrawNote(DeviceContext *dc, LayerElement *element, Layer *layer, Staff *staff, Measure *measure);
+
+    /**
+     * Annotate the current graphic with what the recording says about the element - its onset and
+     * offset as data attributes, its velocity as ink density, and whether it was aligned at all.
+     */
+    void DrawPerformanceAttributes(DeviceContext *dc, const LayerElement *element);
     void DrawRest(DeviceContext *dc, LayerElement *element, Layer *layer, Staff *staff, Measure *measure);
     void DrawSpace(DeviceContext *dc, LayerElement *element, Layer *layer, Staff *staff, Measure *measure);
     void DrawStem(DeviceContext *dc, LayerElement *element, Layer *layer, Staff *staff, Measure *measure);

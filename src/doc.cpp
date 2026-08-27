@@ -160,6 +160,7 @@ void Doc::ResetToSerialization()
     m_focusStatus = FOCUS_UNSET;
 
     m_facsimile = NULL;
+    m_performance.Reset();
 
     m_drawingSmuflFontSize = 0;
     m_drawingLyricFontSize = 0;
@@ -194,6 +195,39 @@ void Doc::ClearSelectionPages()
 void Doc::SetType(DocType type)
 {
     m_type = type;
+}
+
+bool Doc::IsPerformanceAligned() const
+{
+    if (!m_options->m_performanceAlignment.GetValue()) return false;
+
+    return (this->GetSelectedRecording() != NULL);
+}
+
+int Doc::GetPerformanceRulerHeight() const
+{
+    if (!this->IsPerformanceAligned() || !m_options->m_performanceRuler.GetValue()) return 0;
+
+    // The gap below the system, the ticks and the labels below them
+    return this->GetDrawingUnit(100) * 8;
+}
+
+int Doc::GetPerformanceSystemWidth() const
+{
+    const double duration = m_options->m_performanceSystemDuration.GetValue();
+    if (duration <= 0.0) return m_drawingPageContentWidth;
+
+    return static_cast<int>(duration * m_options->m_performanceScale.GetValue() * this->GetDrawingUnit(100));
+}
+
+const PerformedRecording *Doc::GetSelectedRecording() const
+{
+    if (!this->HasPerformance()) return NULL;
+
+    const PerformedRecording *recording = m_performance.GetRecording(m_options->m_performanceRecording.GetValue());
+    if (recording && recording->IsEmpty()) return NULL;
+
+    return recording;
 }
 
 bool Doc::IsSupportedChild(ClassId classId)
@@ -1080,9 +1114,14 @@ void Doc::CastOffDocBase(bool useSb, bool usePb, bool smart)
     // Check if the the horizontal layout is cached by looking at the first measure
     // The cache is not set the first time, or can be reset by Doc::UnCastOffDoc
     Measure *firstMeasure = vrv_cast<Measure *>(unCastOffPage->FindDescendantByType(MEASURE));
+    const bool performanceAligned = this->IsPerformanceAligned();
     if (!firstMeasure || !firstMeasure->HasCachedHorizontalLayout()) {
         // LogDebug("Performing the horizontal layout");
-        unCastOffPage->LayOutHorizontally();
+        // In performed time the width of a measure is the time it took, which is exactly what
+        // the cast-off needs in order to break the systems by duration
+        if (!performanceAligned || !unCastOffPage->LayOutPerformance()) {
+            unCastOffPage->LayOutHorizontally();
+        }
         unCastOffPage->LayOutHorizontallyWithCache();
     }
     else {
@@ -1098,7 +1137,8 @@ void Doc::CastOffDocBase(bool useSb, bool usePb, bool smart)
     }
     else {
         CastOffSystemsFunctor castOffSystems(castOffSinglePage, this, smart);
-        castOffSystems.SetSystemWidth(m_drawingPageContentWidth);
+        castOffSystems.SetSystemWidth(
+            performanceAligned ? this->GetPerformanceSystemWidth() : m_drawingPageContentWidth);
         unCastOffPage->Process(castOffSystems);
         leftoverSystem = castOffSystems.GetLeftoverSystem();
     }
@@ -1136,6 +1176,11 @@ void Doc::CastOffDocBase(bool useSb, bool usePb, bool smart)
     // Here we redo the alignment because of the new scoreDefs
     // Because of the new scoreDef, we need to reset cached drawingX
     castOffSinglePage->ResetCachedDrawingX();
+
+    // The positions still describe the single system the cast-off started from, so they have to
+    // be redone for the systems that came out of it before their height can be measured
+    if (performanceAligned) castOffSinglePage->ApplyPerformanceXPos();
+
     castOffSinglePage->LayOutVertically();
 
     // Detach the contentPage to prepare for CastOffPages

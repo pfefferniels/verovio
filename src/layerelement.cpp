@@ -121,6 +121,8 @@ void LayerElement::Reset()
     m_drawingFacsX = VRV_UNSET;
     m_drawingYRel = 0;
     m_drawingFacsY = VRV_UNSET;
+    m_drawingPerfX = VRV_UNSET;
+    m_perfEvent = PerformedEvent();
     m_drawingXRel = 0;
     m_drawingCueSize = false;
 
@@ -388,6 +390,10 @@ void LayerElement::SetGraceAlignment(Alignment *graceAlignment)
 
 int LayerElement::GetDrawingX() const
 {
+
+    // As with m_drawingFacsX below, the XRel keeps the offset the ordinary layout gave the
+    // element within its alignment
+    if (m_drawingPerfX != VRV_UNSET) return m_drawingPerfX + this->GetDrawingXRel();
 
     // Since m_drawingFacsX is the left position, we adjust the XRel accordingly in AdjustXRelForTranscription
     if (m_drawingFacsX != VRV_UNSET) return m_drawingFacsX + this->GetDrawingXRel();

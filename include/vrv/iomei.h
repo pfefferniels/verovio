@@ -924,6 +924,9 @@ private:
     ///@{
     bool ReadFacsimile(Doc *doc, pugi::xml_node facsimile);
     bool ReadGraphic(Object *parent, pugi::xml_node graphic);
+    bool ReadPerformance(Doc *doc, pugi::xml_node performance);
+    bool ReadRecording(PerformanceData *parent, pugi::xml_node recording);
+    bool ReadWhen(PerformedRecording *parent, pugi::xml_node when);
     bool ReadSurface(Facsimile *parent, pugi::xml_node surface);
     bool ReadTupletSpanAsTuplet(Measure *measure, pugi::xml_node tupletSpan);
     bool ReadZone(Surface *parent, pugi::xml_node zone);
