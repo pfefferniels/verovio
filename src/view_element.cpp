@@ -1551,7 +1551,7 @@ void View::DrawPerformanceAttributes(DeviceContext *dc, const LayerElement *elem
         if ((highest < 0) && recording) highest = recording->GetMaxVelocity();
 
         double ratio = 1.0;
-        if (highest > lowest) ratio = double(event.velocity - lowest) / (highest - lowest);
+        if (highest > lowest) ratio = static_cast<double>(event.velocity - lowest) / (highest - lowest);
         ratio = std::min(1.0, std::max(0.0, ratio));
         dc->SetCustomGraphicOpacity(PERFORMANCE_MIN_OPACITY + (1.0 - PERFORMANCE_MIN_OPACITY) * ratio);
     }

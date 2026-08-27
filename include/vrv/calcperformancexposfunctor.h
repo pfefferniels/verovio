@@ -9,9 +9,8 @@
 #define __VRV_CALCPERFORMANCEXPOSFUNCTOR_H__
 
 #include <map>
-#include <set>
 #include <string>
-#include <tuple>
+#include <unordered_set>
 #include <vector>
 
 //----------------------------------------------------------------------------
@@ -22,17 +21,21 @@
 
 namespace vrv {
 class System;
-class Tie;
 } // namespace vrv
 
 namespace vrv {
 
 //----------------------------------------------------------------------------
-// CalcPerformanceXPosFunctor
+// PerformanceMap
 //----------------------------------------------------------------------------
 
-/** The two passes the functor runs over the same content, see CalcPerformanceXPosFunctor */
-enum PerformancePass { PERFORMANCE_PASS_collect = 0, PERFORMANCE_PASS_apply };
+/** One onset the recording gives to a notated point in time */
+struct PerformedOnset {
+    Fraction notatedTime;
+    double onsetMs = 0.0;
+    /** The offset of the element within its alignment, negative when it is displaced to the left */
+    int xRel = 0;
+};
 
 /**
  * What the recording says about one notated point in time.
@@ -40,7 +43,7 @@ enum PerformancePass { PERFORMANCE_PASS_collect = 0, PERFORMANCE_PASS_apply };
  * latest are what a barline is placed between, since a rolled chord reaches over its downbeat.
  */
 struct PerformanceKnot {
-    double notatedTime = 0.0;
+    Fraction notatedTime;
     double meanMs = 0.0;
     double firstMs = 0.0;
     double lastMs = 0.0;
@@ -51,15 +54,133 @@ struct PerformanceKnot {
     int minXRel = 0;
 };
 
+/** The knots a barline falls between, see PerformanceMap::GetBarLineWindow */
+struct PerformanceWindow {
+    const PerformanceKnot *before = NULL;
+    const PerformanceKnot *after = NULL;
+};
+
+/** A note of the score, identified by its notated time and its pitch */
+struct NoteKey {
+    Fraction notatedTime;
+    int pitch = 0;
+
+    auto operator<=>(const NoteKey &) const = default;
+};
+
+using MapOfNoteEvents = std::map<NoteKey, PerformedEvent>;
+
+/**
+ * This class is the piecewise linear map from notated to performed time that a recording gives to
+ * a score, together with the events looked up by note, which is how a doubled note finds its twin.
+ *
+ * Its knots are sorted by notated time and their mean onset is non decreasing, which is what makes
+ * them usable for interpolation. The earliest and the latest onset of a knot are not smoothed that
+ * way: they are what was played, and the barlines are placed by them.
+ */
+class PerformanceMap {
+public:
+    /**
+     * @name Constructors
+     */
+    ///@{
+    PerformanceMap() = default;
+    /** Merge the onsets sharing a notated time into knots. Takes them in any order. */
+    PerformanceMap(std::vector<PerformedOnset> onsets, MapOfNoteEvents noteEvents);
+    ///@}
+
+    /** True when the recording aligned nothing in the score, so that nothing can be placed */
+    bool IsEmpty() const { return m_knots.empty(); }
+
+    /** Convert a notated time (in whole notes, from the start of the score) to performed ms */
+    double NotatedToMs(const Fraction &notatedTime) const;
+
+    /**
+     * The knots a barline at the given notated time falls between - the last onset before it and
+     * the first at or after it. Either of them is NULL at the ends of the map.
+     */
+    PerformanceWindow GetBarLineWindow(const Fraction &notatedTime) const;
+
+    /**
+     * The event a note of the given pitch at the given notated time was aligned to, or NULL.
+     * A doubled note is often aligned only once, and both copies belong at that onset.
+     */
+    const PerformedEvent *GetNoteEvent(const Fraction &notatedTime, int pitch) const;
+
+private:
+    /** The knots, sorted by notated time */
+    std::vector<PerformanceKnot> m_knots;
+    /** The onset of each aligned note, for resolving doubled notes */
+    MapOfNoteEvents m_noteEvents;
+    /** The rate used outside the extent of the map, in ms per whole note */
+    double m_fallbackRate = 2000.0;
+};
+
+//----------------------------------------------------------------------------
+// CalcPerformanceMapFunctor
+//----------------------------------------------------------------------------
+
+/**
+ * This class collects the onsets that a recording gives to the elements of a page, from which the
+ * notated to performed time map is built.
+ */
+class CalcPerformanceMapFunctor : public DocFunctor {
+public:
+    /**
+     * @name Constructors, destructors
+     */
+    ///@{
+    CalcPerformanceMapFunctor(Doc *doc, const PerformedRecording *recording);
+    virtual ~CalcPerformanceMapFunctor() = default;
+    ///@}
+
+    /*
+     * Abstract base implementation
+     */
+    bool ImplementsEndInterface() const override { return true; }
+
+    /** The map built from what the traversal found, empty when nothing in the score was aligned */
+    PerformanceMap BuildMap() const;
+
+    /*
+     * Functor interface
+     */
+    ///@{
+    FunctorCode VisitLayerElement(LayerElement *layerElement) override;
+    FunctorCode VisitMeasureEnd(Measure *measure) override;
+    ///@}
+
+private:
+    /** A note left to be resolved once every aligned note is known */
+    struct PendingNote {
+        Fraction notatedTime;
+        int pitch = 0;
+        int xRel = 0;
+    };
+
+    /** The recording being laid out */
+    const PerformedRecording *m_recording;
+    /** The onsets found, before BuildMap merges them into knots */
+    std::vector<PerformedOnset> m_onsets;
+    /** The onset of each aligned note, for resolving doubled notes */
+    MapOfNoteEvents m_noteEvents;
+    /** Notes with no alignment of their own, kept until BuildMap can look for their double */
+    std::vector<PendingNote> m_pending;
+    /** The notated time at the start of the current measure, in whole notes */
+    Fraction m_measureTime;
+};
+
+//----------------------------------------------------------------------------
+// CalcPerformanceXPosFunctor
+//----------------------------------------------------------------------------
+
 /**
  * This class re-positions a page that has already been laid out with the ordinary duration based
  * spacing, so that its horizontal axis becomes the performed time of a <recording>.
  *
- * The collect pass gathers every aligned element as a knot of a piecewise linear map from notated
- * to performed time. The apply pass then moves each Alignment to the time the map gives it, which
- * carries measures, barlines and control events along, and gives every note that is itself aligned
- * an absolute position at its own onset - which is what lets notes written as simultaneous be
- * drawn apart.
+ * It moves each Alignment to the time the map gives it, which carries measures, barlines and
+ * control events along, and gives every note that is itself aligned an absolute position at its
+ * own onset - which is what lets notes written as simultaneous be drawn apart.
  *
  * Everything up to and including the left barline keeps the position ordinary spacing gave it, so
  * that the clef, key and meter signature opening a system keep the room they need.
@@ -70,7 +191,7 @@ public:
      * @name Constructors, destructors
      */
     ///@{
-    CalcPerformanceXPosFunctor(Doc *doc, const PerformedRecording *recording);
+    CalcPerformanceXPosFunctor(Doc *doc, const PerformedRecording *recording, const PerformanceMap &map);
     virtual ~CalcPerformanceXPosFunctor() = default;
     ///@}
 
@@ -78,18 +199,6 @@ public:
      * Abstract base implementation
      */
     bool ImplementsEndInterface() const override { return true; }
-
-    /**
-     * Select the pass to run. Call BuildMap() between the two.
-     */
-    void SetPass(PerformancePass pass);
-
-    /**
-     * Build the notated to performed time map from what the collect pass found.
-     * Returns false when the recording does not align anything in the score, in which
-     * case the document cannot be laid out in performed time.
-     */
-    bool BuildMap();
 
     /*
      * Functor interface
@@ -104,9 +213,6 @@ public:
     ///@}
 
 private:
-    /** Convert a notated time (in whole notes, from the start of the score) to performed ms */
-    double NotatedToMs(double notatedTime) const;
-
     /** Convert a performed time in ms to a drawing position */
     int MsToX(double ms) const;
 
@@ -115,56 +221,35 @@ private:
      * so it goes between the last note before it and the first note after it - which matters
      * because a chord rolled across the downbeat starts before the beat it belongs to.
      */
-    int CalcBarLineX(double notatedTime) const;
+    int CalcBarLineX(const Fraction &notatedTime) const;
 
-    /**
-     * The event another note of the same pitch at the same notated time was aligned to, or NULL.
-     * A doubled note is often aligned only once, and both copies belong at that onset.
-     */
-    const PerformedEvent *GetDuplicateEvent(const Note *note, double notatedTime) const;
+    /** Anchor the performed time of the system opened by the measure being visited */
+    void CalcSystemTimeOrigin(int leftBarLineXRel);
 
-    /** The notated time of an element, from the start of the score, in whole notes */
-    double GetNotatedTime(const LayerElement *layerElement) const;
-
-public:
-    //
-private:
     /** The recording being laid out */
     const PerformedRecording *m_recording;
-    /** The current pass */
-    PerformancePass m_pass;
+    /** The notated to performed time map of the recording */
+    const PerformanceMap &m_map;
     /** Drawing units per millisecond */
-    double m_unitsPerMs;
-    /** The performed time of the start of the recording */
-    double m_originMs;
+    double m_unitsPerMs = 0.0;
     /** The performed time drawn at the left edge of the current system */
-    double m_systemOriginMs;
-    /** The knots of the notated to performed time map, sorted by notated time */
-    std::vector<PerformanceKnot> m_map;
-    /** Collected onsets, with their offset within their alignment, before BuildMap() merges them */
-    std::vector<std::tuple<double, double, int>> m_collected;
-    /** The onset of each aligned note, by notated time and pitch, for resolving doubled notes */
-    std::map<std::pair<double, int>, PerformedEvent> m_byPitch;
-    /** Notes with no alignment of their own, kept until BuildMap() can look for their double */
-    std::vector<std::tuple<double, int, int>> m_pending;
+    double m_systemOriginMs = 0.0;
     /** The notes that end a tie - they are not sounded again, so they are never aligned */
-    std::set<std::string> m_tieEnds;
-    /** The rate used outside the extent of the map, in ms per whole note */
-    double m_fallbackRate;
+    std::unordered_set<std::string> m_tieEnds;
     /** The notated time at the start of the current measure, in whole notes */
     Fraction m_measureTime;
     /** The system being visited */
-    System *m_currentSystem;
+    System *m_currentSystem = NULL;
     /** The drawing X of the current system */
-    int m_systemX;
+    int m_systemX = 0;
     /** The drawing X at which performed time starts, i.e. after the opening signatures */
-    int m_timeOriginX;
+    int m_timeOriginX = 0;
     /** Whether the measure being visited opens its system */
-    bool m_isFirstMeasureInSystem;
+    bool m_isFirstMeasureInSystem = true;
     /** The drawing X of the measure being visited */
-    int m_measureX;
+    int m_measureX = 0;
     /** The extent of the current system, used to give it its width */
-    int m_systemMaxX;
+    int m_systemMaxX = 0;
 };
 
 } // namespace vrv

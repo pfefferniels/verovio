@@ -276,9 +276,13 @@ void View::DrawPerformanceRuler(DeviceContext *dc, System *system)
     }
     rulerTxt.SetPointSize(m_doc->GetDrawingLyricFont(55)->GetPointSize());
 
-    int index = 0;
-    for (double t = firstTick; (t - originSeconds) * unitsPerSecond <= width; t += interval, ++index) {
-        const int x = x1 + static_cast<int>((t - originSeconds) * unitsPerSecond);
+    for (int index = 0;; ++index) {
+        // Counted from the first tick rather than accumulated, so that the ticks do not drift
+        const double t = firstTick + index * interval;
+        const double offset = (t - originSeconds) * unitsPerSecond;
+        if (offset > width) break;
+
+        const int x = x1 + static_cast<int>(offset);
         const bool labelled = (index % labelEvery == 0);
         const int tickHeight = labelled ? unit * 2 : unit;
         this->DrawFilledRectangle(dc, x, y, x + lineWidth, y - tickHeight);

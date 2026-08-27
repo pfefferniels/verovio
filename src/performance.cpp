@@ -40,19 +40,12 @@ void PerformedRecording::AddEvent(const std::string &xmlId, const PerformedEvent
         existing.durationMs = offset - existing.onsetMs;
     }
 
-    if (!m_hasEventExtent) {
-        m_firstOnsetMs = event.onsetMs;
-        m_lastOffsetMs = event.GetOffsetMs();
-        m_hasEventExtent = true;
-    }
-    else {
-        m_firstOnsetMs = std::min(m_firstOnsetMs, event.onsetMs);
-        m_lastOffsetMs = std::max(m_lastOffsetMs, event.GetOffsetMs());
-    }
+    m_firstOnsetMs = std::min(m_firstOnsetMs, event.onsetMs);
+    m_lastOffsetMs = std::max(m_lastOffsetMs, event.GetOffsetMs());
 
     if (event.velocity != VRV_UNSET) {
-        m_minVelocity = (m_minVelocity == VRV_UNSET) ? event.velocity : std::min(m_minVelocity, event.velocity);
-        m_maxVelocity = (m_maxVelocity == VRV_UNSET) ? event.velocity : std::max(m_maxVelocity, event.velocity);
+        m_minVelocity = std::min(m_minVelocity, event.velocity);
+        m_maxVelocity = std::max(m_maxVelocity, event.velocity);
     }
 }
 
@@ -73,11 +66,9 @@ void PerformanceData::Reset()
     m_recordings.clear();
 }
 
-PerformedRecording *PerformanceData::AddRecording()
+void PerformanceData::AddRecording(PerformedRecording recording)
 {
-    m_recordings.push_back(PerformedRecording());
-
-    return &m_recordings.back();
+    m_recordings.push_back(std::move(recording));
 }
 
 const PerformedRecording *PerformanceData::GetRecording(const std::string &selector) const
@@ -100,49 +91,40 @@ const PerformedRecording *PerformanceData::GetRecording(const std::string &selec
 
     // An @xml:id or a @source, with or without a leading '#'
     const std::string id = (selector.at(0) == '#') ? selector.substr(1) : selector;
-    for (const PerformedRecording &recording : m_recordings) {
-        if ((recording.GetID() == id) || (recording.GetSource() == id)) return &recording;
-    }
+    const auto iter
+        = std::find_if(m_recordings.begin(), m_recordings.end(), [&id](const PerformedRecording &recording) {
+              return (recording.GetID() == id) || (recording.GetSource() == id);
+          });
+    if (iter != m_recordings.end()) return &*iter;
 
     LogWarning("No recording with an @xml:id or @source matching '%s'", selector.c_str());
 
     return NULL;
 }
 
-double PerformanceData::ParseTimeToMs(const std::string &value, bool *ok)
+std::optional<double> PerformanceData::ParseTimeToMs(const std::string &value)
 {
-    if (ok) *ok = false;
-    if (value.empty()) return 0.0;
+    if (value.empty()) return std::nullopt;
 
     const char *start = value.c_str();
     char *end = NULL;
     const double number = strtod(start, &end);
-    if (end == start) return 0.0;
+    if (end == start) return std::nullopt;
 
     // Skip whitespace between the number and its unit
     while ((*end != '\0') && isspace(static_cast<unsigned char>(*end))) ++end;
 
     std::string unit(end);
-    std::transform(unit.begin(), unit.end(), unit.begin(), ::tolower);
+    std::transform(
+        unit.begin(), unit.end(), unit.begin(), [](unsigned char c) { return static_cast<char>(tolower(c)); });
 
-    double ms = number;
-    if (unit == "ms") {
-        ms = number;
-    }
-    else if (unit == "s") {
-        ms = number * 1000.0;
-    }
-    else if (unit == "min") {
-        ms = number * 60000.0;
-    }
-    else if (!unit.empty()) {
-        LogWarning(
-            "Unsupported time unit '%s' in '%s', reading the value as milliseconds", unit.c_str(), value.c_str());
-    }
+    if (unit.empty() || (unit == "ms")) return number;
+    if (unit == "s") return number * 1000.0;
+    if (unit == "min") return number * 60000.0;
 
-    if (ok) *ok = true;
+    LogWarning("Unsupported time unit '%s' in '%s', reading the value as milliseconds", unit.c_str(), value.c_str());
 
-    return ms;
+    return number;
 }
 
 } // namespace vrv

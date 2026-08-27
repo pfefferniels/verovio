@@ -429,11 +429,16 @@ bool Page::ApplyPerformanceXPos()
     const PerformedRecording *recording = doc->GetSelectedRecording();
     if (!recording) return false;
 
-    CalcPerformanceXPosFunctor calcPerformanceXPos(doc, recording);
-    calcPerformanceXPos.SetPass(PERFORMANCE_PASS_collect);
-    this->Process(calcPerformanceXPos);
-    if (!calcPerformanceXPos.BuildMap()) return false;
-    calcPerformanceXPos.SetPass(PERFORMANCE_PASS_apply);
+    CalcPerformanceMapFunctor calcPerformanceMap(doc, recording);
+    this->Process(calcPerformanceMap);
+
+    const PerformanceMap map = calcPerformanceMap.BuildMap();
+    if (map.IsEmpty()) {
+        LogWarning("The selected recording does not align any element of the score");
+        return false;
+    }
+
+    CalcPerformanceXPosFunctor calcPerformanceXPos(doc, recording, map);
     this->Process(calcPerformanceXPos);
 
     // The ledger lines are recalculated once the notes stand at their performed position, since

@@ -10,6 +10,8 @@
 //----------------------------------------------------------------------------
 
 #include <algorithm>
+#include <numeric>
+#include <ranges>
 
 //----------------------------------------------------------------------------
 
@@ -25,22 +27,156 @@
 namespace vrv {
 
 //----------------------------------------------------------------------------
+// PerformanceMap
+//----------------------------------------------------------------------------
+
+PerformanceMap::PerformanceMap(std::vector<PerformedOnset> onsets, MapOfNoteEvents noteEvents)
+    : m_noteEvents(std::move(noteEvents))
+{
+    std::sort(onsets.begin(), onsets.end(),
+        [](const PerformedOnset &lhs, const PerformedOnset &rhs) { return lhs.notatedTime < rhs.notatedTime; });
+
+    // Merge the onsets sharing a notated time into a single knot. Their mean is what the map
+    // uses for everything that is not itself aligned; the individual onsets are still what the
+    // aligned notes are drawn at, which is where asynchrony comes from.
+    for (auto iter = onsets.begin(); iter != onsets.end();) {
+        const auto rest = std::ranges::subrange(iter, onsets.end());
+        const auto chunk = std::ranges::subrange(
+            iter, std::ranges::upper_bound(rest, iter->notatedTime, {}, &PerformedOnset::notatedTime));
+        const auto [earliest, latest] = std::ranges::minmax_element(chunk, {}, &PerformedOnset::onsetMs);
+
+        const double sumMs = std::accumulate(chunk.begin(), chunk.end(), 0.0,
+            [](double sum, const PerformedOnset &onset) { return sum + onset.onsetMs; });
+
+        PerformanceKnot knot;
+        knot.notatedTime = iter->notatedTime;
+        knot.firstMs = earliest->onsetMs;
+        knot.lastMs = latest->onsetMs;
+        knot.minXRel = std::min(0, std::ranges::min_element(chunk, {}, &PerformedOnset::xRel)->xRel);
+        knot.meanMs = sumMs / std::ranges::distance(chunk);
+        // The map has to be monotonic to be usable for interpolation
+        if (!m_knots.empty()) knot.meanMs = std::max(knot.meanMs, m_knots.back().meanMs);
+
+        m_knots.push_back(knot);
+        iter = chunk.end();
+    }
+
+    // The rate used before the first and after the last knot, in ms per whole note
+    if (m_knots.size() >= 2) {
+        const double notatedSpan = m_knots.back().notatedTime.ToDouble() - m_knots.front().notatedTime.ToDouble();
+        const double performedSpan = m_knots.back().meanMs - m_knots.front().meanMs;
+        if ((notatedSpan > 0.0) && (performedSpan > 0.0)) m_fallbackRate = performedSpan / notatedSpan;
+    }
+}
+
+double PerformanceMap::NotatedToMs(const Fraction &notatedTime) const
+{
+    if (m_knots.empty()) return 0.0;
+
+    const double time = notatedTime.ToDouble();
+    if (notatedTime <= m_knots.front().notatedTime) {
+        return m_knots.front().meanMs - (m_knots.front().notatedTime.ToDouble() - time) * m_fallbackRate;
+    }
+    if (notatedTime >= m_knots.back().notatedTime) {
+        return m_knots.back().meanMs + (time - m_knots.back().notatedTime.ToDouble()) * m_fallbackRate;
+    }
+
+    const auto high = std::ranges::upper_bound(m_knots, notatedTime, {}, &PerformanceKnot::notatedTime);
+    const PerformanceKnot &low = *(high - 1);
+
+    const double span = high->notatedTime.ToDouble() - low.notatedTime.ToDouble();
+    if (span <= 0.0) return low.meanMs;
+
+    return low.meanMs + (time - low.notatedTime.ToDouble()) / span * (high->meanMs - low.meanMs);
+}
+
+PerformanceWindow PerformanceMap::GetBarLineWindow(const Fraction &notatedTime) const
+{
+    const auto after = std::ranges::lower_bound(m_knots, notatedTime, {}, &PerformanceKnot::notatedTime);
+
+    PerformanceWindow window;
+    if (after != m_knots.end()) window.after = &*after;
+    if (after != m_knots.begin()) window.before = &*(after - 1);
+
+    return window;
+}
+
+const PerformedEvent *PerformanceMap::GetNoteEvent(const Fraction &notatedTime, int pitch) const
+{
+    auto iter = m_noteEvents.find({ notatedTime, pitch });
+    if (iter == m_noteEvents.end()) return NULL;
+
+    return &iter->second;
+}
+
+//----------------------------------------------------------------------------
+// CalcPerformanceMapFunctor
+//----------------------------------------------------------------------------
+
+CalcPerformanceMapFunctor::CalcPerformanceMapFunctor(Doc *doc, const PerformedRecording *recording) : DocFunctor(doc)
+{
+    assert(recording);
+
+    m_recording = recording;
+}
+
+PerformanceMap CalcPerformanceMapFunctor::BuildMap() const
+{
+    // A note doubled at the same notated time is often aligned only once. The copy is drawn at
+    // its double's onset, so it belongs in the map too - the barlines have to see how far it reaches.
+    std::vector<PerformedOnset> onsets = m_onsets;
+    for (const PendingNote &pending : m_pending) {
+        auto iter = m_noteEvents.find({ pending.notatedTime, pending.pitch });
+        if (iter != m_noteEvents.end()) {
+            onsets.push_back({ pending.notatedTime, iter->second.onsetMs, pending.xRel });
+        }
+    }
+
+    return PerformanceMap(std::move(onsets), m_noteEvents);
+}
+
+FunctorCode CalcPerformanceMapFunctor::VisitLayerElement(LayerElement *layerElement)
+{
+    const Alignment *alignment = layerElement->GetAlignment();
+    if (!alignment) return FUNCTOR_CONTINUE;
+
+    const Fraction notatedTime = m_measureTime + alignment->GetTime();
+    const PerformedEvent *event = m_recording->GetEvent(layerElement->GetID());
+    const bool isNote = layerElement->Is(NOTE);
+
+    if (event) {
+        m_onsets.push_back({ notatedTime, event->onsetMs, layerElement->GetDrawingXRel() });
+        if (isNote) {
+            const Note *note = vrv_cast<const Note *>(layerElement);
+            m_noteEvents.insert({ { notatedTime, note->GetMIDIPitch() }, *event });
+        }
+    }
+    else if (isNote) {
+        const Note *note = vrv_cast<const Note *>(layerElement);
+        m_pending.push_back({ notatedTime, note->GetMIDIPitch(), layerElement->GetDrawingXRel() });
+    }
+
+    return FUNCTOR_CONTINUE;
+}
+
+FunctorCode CalcPerformanceMapFunctor::VisitMeasureEnd(Measure *measure)
+{
+    m_measureTime = m_measureTime + measure->m_measureAligner.GetMaxTime();
+
+    return FUNCTOR_CONTINUE;
+}
+
+//----------------------------------------------------------------------------
 // CalcPerformanceXPosFunctor
 //----------------------------------------------------------------------------
 
-CalcPerformanceXPosFunctor::CalcPerformanceXPosFunctor(Doc *doc, const PerformedRecording *recording) : DocFunctor(doc)
+CalcPerformanceXPosFunctor::CalcPerformanceXPosFunctor(
+    Doc *doc, const PerformedRecording *recording, const PerformanceMap &map)
+    : DocFunctor(doc), m_recording(recording), m_map(map)
 {
-    m_recording = recording;
-    m_pass = PERFORMANCE_PASS_collect;
-    m_originMs = recording ? recording->GetFirstOnsetMs() : 0.0;
-    m_systemOriginMs = m_originMs;
-    m_fallbackRate = 2000.0;
-    m_measureTime = 0;
-    m_currentSystem = NULL;
-    m_systemX = 0;
-    m_timeOriginX = 0;
-    m_systemMaxX = 0;
-    m_isFirstMeasureInSystem = true;
+    assert(recording);
+
+    m_systemOriginMs = recording->GetFirstOnsetMs();
 
     // The option is the width of one second in MEI units
     const double unitsPerSecond = doc->GetOptions()->m_performanceScale.GetValue();
@@ -55,123 +191,27 @@ CalcPerformanceXPosFunctor::CalcPerformanceXPosFunctor(Doc *doc, const Performed
     }
 }
 
-void CalcPerformanceXPosFunctor::SetPass(PerformancePass pass)
-{
-    m_pass = pass;
-    // The notated time is accumulated over the whole score, so it restarts with each pass
-    m_measureTime = 0;
-    m_isFirstMeasureInSystem = true;
-}
-
-bool CalcPerformanceXPosFunctor::BuildMap()
-{
-    m_map.clear();
-
-    // A note doubled at the same notated time is often aligned only once. The copy is drawn at
-    // its double's onset, so it belongs in the map too - the barlines have to see how far it reaches.
-    for (const auto &[notatedTime, pitch, xRel] : m_pending) {
-        auto iter = m_byPitch.find({ notatedTime, pitch });
-        if (iter != m_byPitch.end()) {
-            m_collected.push_back({ notatedTime, iter->second.onsetMs, xRel });
-        }
-    }
-    m_pending.clear();
-
-    if (m_collected.empty()) {
-        LogWarning("The selected recording does not align any element of the score");
-        return false;
-    }
-
-    std::sort(m_collected.begin(), m_collected.end(),
-        [](const std::tuple<double, double, int> &lhs, const std::tuple<double, double, int> &rhs) {
-            return std::get<0>(lhs) < std::get<0>(rhs);
-        });
-
-    // Merge the events sharing a notated time into a single knot. Their mean is what the map
-    // uses for everything that is not itself aligned; the individual onsets are still what the
-    // aligned notes are drawn at, which is where asynchrony comes from.
-    for (auto iter = m_collected.begin(); iter != m_collected.end();) {
-        auto next = iter;
-        double sum = 0.0;
-        int count = 0;
-        PerformanceKnot knot;
-        knot.notatedTime = std::get<0>(*iter);
-        knot.firstMs = std::get<1>(*iter);
-        knot.lastMs = std::get<1>(*iter);
-        while ((next != m_collected.end()) && (std::get<0>(*next) == knot.notatedTime)) {
-            sum += std::get<1>(*next);
-            knot.firstMs = std::min(knot.firstMs, std::get<1>(*next));
-            knot.lastMs = std::max(knot.lastMs, std::get<1>(*next));
-            knot.minXRel = std::min(knot.minXRel, std::get<2>(*next));
-            ++count;
-            ++next;
-        }
-        knot.meanMs = sum / count;
-        // The map has to be monotonic to be usable for interpolation
-        if (!m_map.empty() && (knot.meanMs < m_map.back().meanMs)) knot.meanMs = m_map.back().meanMs;
-        m_map.push_back(knot);
-        iter = next;
-    }
-
-    // The rate used before the first and after the last knot, in ms per whole note
-    if (m_map.size() >= 2) {
-        const double notatedSpan = m_map.back().notatedTime - m_map.front().notatedTime;
-        const double performedSpan = m_map.back().meanMs - m_map.front().meanMs;
-        if ((notatedSpan > 0.0) && (performedSpan > 0.0)) m_fallbackRate = performedSpan / notatedSpan;
-    }
-
-    return true;
-}
-
-double CalcPerformanceXPosFunctor::NotatedToMs(double notatedTime) const
-{
-    if (m_map.empty()) return m_originMs;
-
-    if (notatedTime <= m_map.front().notatedTime) {
-        return m_map.front().meanMs - (m_map.front().notatedTime - notatedTime) * m_fallbackRate;
-    }
-    if (notatedTime >= m_map.back().notatedTime) {
-        return m_map.back().meanMs + (notatedTime - m_map.back().notatedTime) * m_fallbackRate;
-    }
-
-    auto upper = std::upper_bound(m_map.begin(), m_map.end(), notatedTime,
-        [](double value, const PerformanceKnot &knot) { return value < knot.notatedTime; });
-    const PerformanceKnot &high = *upper;
-    const PerformanceKnot &low = *(upper - 1);
-
-    const double span = high.notatedTime - low.notatedTime;
-    if (span <= 0.0) return low.meanMs;
-
-    return low.meanMs + (notatedTime - low.notatedTime) / span * (high.meanMs - low.meanMs);
-}
-
 int CalcPerformanceXPosFunctor::MsToX(double ms) const
 {
     return m_timeOriginX + static_cast<int>((ms - m_systemOriginMs) * m_unitsPerMs);
 }
 
-int CalcPerformanceXPosFunctor::CalcBarLineX(double notatedTime) const
+int CalcPerformanceXPosFunctor::CalcBarLineX(const Fraction &notatedTime) const
 {
-    if (m_map.empty()) return this->MsToX(this->NotatedToMs(notatedTime));
-
     // The first note of the measure the barline opens, and the last one before it
-    auto after = std::lower_bound(m_map.begin(), m_map.end(), notatedTime,
-        [](const PerformanceKnot &knot, double value) { return knot.notatedTime < value; });
-
-    const bool hasAfter = (after != m_map.end());
-    const bool hasBefore = (after != m_map.begin());
-    if (!hasAfter && !hasBefore) return this->MsToX(this->NotatedToMs(notatedTime));
+    const PerformanceWindow window = m_map.GetBarLineWindow(notatedTime);
+    if (!window.before && !window.after) return this->MsToX(m_map.NotatedToMs(notatedTime));
 
     const int unit = m_doc->GetDrawingUnit(100);
-    if (!hasAfter) return this->MsToX((after - 1)->lastMs) + unit * 2;
+    if (!window.after) return this->MsToX(window.before->lastMs) + unit * 2;
 
     // A chord rolled across the downbeat starts before the beat it belongs to, so the barline
     // goes by the earliest of those onsets, never by their mean. A notehead displaced to the
     // left within its own alignment - a chord second, say - reaches further still.
-    const int afterX = this->MsToX(after->firstMs) + after->minXRel;
-    if (!hasBefore) return afterX - unit * 2;
+    const int afterX = this->MsToX(window.after->firstMs) + window.after->minXRel;
+    if (!window.before) return afterX - unit * 2;
 
-    const int beforeX = this->MsToX((after - 1)->lastMs);
+    const int beforeX = this->MsToX(window.before->lastMs);
 
     // Halfway between the two where there is room, and just clear of the downbeat where there is
     // more than enough. Where the playing overlapped the barline, it still goes before the
@@ -183,20 +223,24 @@ int CalcPerformanceXPosFunctor::CalcBarLineX(double notatedTime) const
     return x;
 }
 
-const PerformedEvent *CalcPerformanceXPosFunctor::GetDuplicateEvent(const Note *note, double notatedTime) const
+void CalcPerformanceXPosFunctor::CalcSystemTimeOrigin(int leftBarLineXRel)
 {
-    auto iter = m_byPitch.find({ notatedTime, note->GetMIDIPitch() });
-    if (iter == m_byPitch.end()) return NULL;
+    // Each system starts at its own performed time, so that the systems stack from the left edge
+    // whatever point of the recording they cover
+    m_systemOriginMs = m_map.NotatedToMs(m_measureTime);
+    m_timeOriginX = m_systemX + leftBarLineXRel;
+    // The brace, the line opening the system and the labels are all drawn against the left edge
+    // of the system, so the first measure has to begin exactly there. Its left barline closes the
+    // gutter and is pinned to the end of it, which the whole system is shifted by - a barline
+    // stands ahead of the downbeat it announces, so without this the measure would reach back
+    // past the edge of the system.
+    m_timeOriginX += (m_systemX + leftBarLineXRel) - this->CalcBarLineX(m_measureTime);
+    if (!m_currentSystem) return;
 
-    return &iter->second;
-}
-
-double CalcPerformanceXPosFunctor::GetNotatedTime(const LayerElement *layerElement) const
-{
-    const Alignment *alignment = layerElement->GetAlignment();
-    if (!alignment) return m_measureTime.ToDouble();
-
-    return (m_measureTime + alignment->GetTime()).ToDouble();
+    // The time the ruler reads at the left edge of the content is the one that falls on the
+    // barline, which is a little before the first onset the system holds
+    const double gutterMs = m_systemOriginMs - (m_timeOriginX - m_systemX - leftBarLineXRel) / m_unitsPerMs;
+    m_currentSystem->SetPerformanceOrigin(gutterMs, leftBarLineXRel);
 }
 
 FunctorCode CalcPerformanceXPosFunctor::VisitSystem(System *system)
@@ -212,59 +256,34 @@ FunctorCode CalcPerformanceXPosFunctor::VisitSystem(System *system)
 
 FunctorCode CalcPerformanceXPosFunctor::VisitSystemEnd(System *system)
 {
-    if (m_pass == PERFORMANCE_PASS_apply) {
-        const int rightPadding = m_doc->GetDrawingUnit(100) * 4;
-        system->m_drawingTotalWidth = m_systemMaxX - m_systemX + rightPadding;
-        system->m_drawingJustifiableWidth = 0;
-    }
+    const int rightPadding = m_doc->GetDrawingUnit(100) * 4;
+    system->m_drawingTotalWidth = m_systemMaxX - m_systemX + rightPadding;
+    system->m_drawingJustifiableWidth = 0;
 
     return FUNCTOR_CONTINUE;
 }
 
 FunctorCode CalcPerformanceXPosFunctor::VisitMeasure(Measure *measure)
 {
-    if (m_pass == PERFORMANCE_PASS_apply) {
-        // Everything up to and including the left barline keeps the position that the ordinary
-        // spacing gave it, so performed time starts only after that gutter.
-        const int leftBarLineXRel = measure->GetLeftBarLineXRel();
-        if (m_isFirstMeasureInSystem) {
-            // Each system starts at its own performed time, so that the systems stack from the
-            // left edge whatever point of the recording they cover
-            m_systemOriginMs = this->NotatedToMs(m_measureTime.ToDouble());
-            m_timeOriginX = m_systemX + leftBarLineXRel;
-            // The brace, the line opening the system and the labels are all drawn against the
-            // left edge of the system, so the first measure has to begin exactly there. Its left
-            // barline closes the gutter and is pinned to the end of it, which the whole system
-            // is shifted by - a barline stands ahead of the downbeat it announces, so without
-            // this the measure would reach back past the edge of the system.
-            m_timeOriginX += (m_systemX + leftBarLineXRel) - this->CalcBarLineX(m_measureTime.ToDouble());
-            if (m_currentSystem) {
-                // The time the ruler reads at the left edge of the content is the one that falls
-                // on the barline, which is a little before the first onset the system holds
-                const double gutterMs = m_systemOriginMs - (m_timeOriginX - m_systemX - leftBarLineXRel) / m_unitsPerMs;
-                m_currentSystem->SetPerformanceOrigin(gutterMs, leftBarLineXRel);
-            }
-        }
+    // Everything up to and including the left barline keeps the position that the ordinary
+    // spacing gave it, so performed time starts only after that gutter.
+    const int leftBarLineXRel = measure->GetLeftBarLineXRel();
+    if (m_isFirstMeasureInSystem) this->CalcSystemTimeOrigin(leftBarLineXRel);
 
-        // The left barline of the measure goes between the last note before it and the first
-        // note of its downbeat
-        const int barLineX = this->CalcBarLineX(m_measureTime.ToDouble());
-        m_measureX = barLineX - leftBarLineXRel;
-        measure->SetDrawingXRel(m_measureX - m_systemX);
+    // The left barline of the measure goes between the last note before it and the first
+    // note of its downbeat
+    m_measureX = this->CalcBarLineX(m_measureTime) - leftBarLineXRel;
+    measure->SetDrawingXRel(m_measureX - m_systemX);
 
-        // The aligners are not reached by the page traversal
-        measure->m_measureAligner.Process(*this);
-    }
+    // The aligners are not reached by the page traversal
+    measure->m_measureAligner.Process(*this);
 
     return FUNCTOR_CONTINUE;
 }
 
 FunctorCode CalcPerformanceXPosFunctor::VisitMeasureEnd(Measure *measure)
 {
-    if (m_pass == PERFORMANCE_PASS_apply) {
-        m_systemMaxX = std::max(m_systemMaxX, m_measureX + measure->GetWidth());
-    }
-
+    m_systemMaxX = std::max(m_systemMaxX, m_measureX + measure->GetWidth());
     m_measureTime = m_measureTime + measure->m_measureAligner.GetMaxTime();
     m_isFirstMeasureInSystem = false;
 
@@ -273,23 +292,20 @@ FunctorCode CalcPerformanceXPosFunctor::VisitMeasureEnd(Measure *measure)
 
 FunctorCode CalcPerformanceXPosFunctor::VisitAlignment(Alignment *alignment)
 {
-    if (m_pass != PERFORMANCE_PASS_apply) return FUNCTOR_CONTINUE;
-
     // The gutter of the measure keeps the ordinary spacing
     if (alignment->GetType() <= ALIGNMENT_MEASURE_LEFT_BARLINE) return FUNCTOR_CONTINUE;
 
-    const double notatedTime = (m_measureTime + alignment->GetTime()).ToDouble();
+    const Fraction notatedTime = m_measureTime + alignment->GetTime();
 
     // The closing barline is placed the same way as the opening one of the next measure, so that
     // the two meet and the staff lines run on without a gap
     const bool isBarLine = (alignment->GetType() >= ALIGNMENT_MEASURE_RIGHT_BARLINE);
-    const int x = isBarLine ? this->CalcBarLineX(notatedTime) : this->MsToX(this->NotatedToMs(notatedTime));
+    const int x = isBarLine ? this->CalcBarLineX(notatedTime) : this->MsToX(m_map.NotatedToMs(notatedTime));
     alignment->SetXRel(x - m_measureX);
 
     // Grace notes are stacked to the left of the note they belong to
-    const MapOfIntGraceAligners &graceAligners = alignment->GetGraceAligners();
-    for (const auto &[key, value] : graceAligners) {
-        value->SetGraceAlignmentXPos(m_doc);
+    for (GraceAligner *graceAligner : alignment->GetGraceAligners() | std::views::values) {
+        graceAligner->SetGraceAlignmentXPos(m_doc);
     }
 
     return FUNCTOR_CONTINUE;
@@ -300,29 +316,14 @@ FunctorCode CalcPerformanceXPosFunctor::VisitLayerElement(LayerElement *layerEle
     const Alignment *alignment = layerElement->GetAlignment();
     if (!alignment) return FUNCTOR_CONTINUE;
 
+    const Fraction notatedTime = m_measureTime + alignment->GetTime();
     const PerformedEvent *event = m_recording->GetEvent(layerElement->GetID());
-
-    const double notatedTime = this->GetNotatedTime(layerElement);
-
-    if (m_pass == PERFORMANCE_PASS_collect) {
-        if (event) {
-            m_collected.push_back({ notatedTime, event->onsetMs, layerElement->GetDrawingXRel() });
-            if (layerElement->Is(NOTE)) {
-                const Note *note = vrv_cast<const Note *>(layerElement);
-                m_byPitch.insert({ { notatedTime, note->GetMIDIPitch() }, *event });
-            }
-        }
-        else if (layerElement->Is(NOTE)) {
-            const Note *note = vrv_cast<const Note *>(layerElement);
-            m_pending.push_back({ notatedTime, note->GetMIDIPitch(), layerElement->GetDrawingXRel() });
-        }
-        return FUNCTOR_CONTINUE;
-    }
 
     // A note doubled at the same notated time is often aligned only once - the copy belongs at
     // the same onset, and is no more unaligned than the note it doubles
     if (!event && layerElement->Is(NOTE)) {
-        event = this->GetDuplicateEvent(vrv_cast<const Note *>(layerElement), notatedTime);
+        const Note *note = vrv_cast<const Note *>(layerElement);
+        event = m_map.GetNoteEvent(notatedTime, note->GetMIDIPitch());
     }
 
     if (event) {
@@ -337,10 +338,8 @@ FunctorCode CalcPerformanceXPosFunctor::VisitLayerElement(LayerElement *layerEle
         // record of that, so that the drawing can mark it as unaligned - which the second note of
         // a tie is not, since it is never attacked.
         PerformedEvent interpolated;
-        interpolated.onsetMs = this->NotatedToMs(notatedTime);
-        interpolated.durationMs = 0.0;
-        interpolated.velocity = VRV_UNSET;
-        interpolated.matched = (m_tieEnds.count(layerElement->GetID()) > 0);
+        interpolated.onsetMs = m_map.NotatedToMs(notatedTime);
+        interpolated.matched = m_tieEnds.contains(layerElement->GetID());
         layerElement->m_perfEvent = interpolated;
     }
 

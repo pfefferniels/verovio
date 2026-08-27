@@ -9,6 +9,10 @@
 
 //----------------------------------------------------------------------------
 
+#include <algorithm>
+
+//----------------------------------------------------------------------------
+
 #include "altsyminterface.h"
 #include "areaposinterface.h"
 #include "beamspan.h"
@@ -1406,18 +1410,17 @@ bool PrepareLayerElementPartsFunctor::IsChordRolled(const Chord *chord) const
 
     // Any spread at all separates the notes horizontally, so there is no threshold below which
     // one stem would still reach them all
-    double earliest = 0.0;
-    double latest = 0.0;
-    bool first = true;
-    for (const Object *child : chord->GetList()) {
-        const PerformedEvent *event = recording->GetEvent(child->GetID());
-        if (!event) continue;
-        earliest = first ? event->onsetMs : std::min(earliest, event->onsetMs);
-        latest = first ? event->onsetMs : std::max(latest, event->onsetMs);
-        first = false;
-    }
+    const ListOfConstObjects &notes = chord->GetList();
+    const auto eventOf = [recording](const Object *note) { return recording->GetEvent(note->GetID()); };
+    const auto aligned = std::find_if(notes.begin(), notes.end(), eventOf);
+    if (aligned == notes.end()) return false;
 
-    return (!first && (latest > earliest));
+    const double onsetMs = eventOf(*aligned)->onsetMs;
+
+    return std::any_of(std::next(aligned), notes.end(), [&eventOf, onsetMs](const Object *note) {
+        const PerformedEvent *event = eventOf(note);
+        return (event && (event->onsetMs != onsetMs));
+    });
 }
 
 Stem *PrepareLayerElementPartsFunctor::EnsureStemExists(Stem *stem, Object *parent) const

@@ -9,6 +9,7 @@
 
 //----------------------------------------------------------------------------
 
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <math.h>
@@ -37,6 +38,20 @@
 #include "vrv.h"
 
 namespace vrv {
+
+/**
+ * The X of the outermost note of a rolled chord on the side the beam continues on.
+ * Such a chord keeps its notated position while its notes move off to the moments they were
+ * played, possibly all to one side of it, and the beam has to reach the stems actually drawn.
+ */
+static int GetSplitChordX(const Chord *chord, bool toTheRight)
+{
+    const ListOfConstObjects &notes = chord->GetList();
+    const auto iter = toTheRight ? std::ranges::max_element(notes, {}, &Object::GetDrawingX)
+                                 : std::ranges::min_element(notes, {}, &Object::GetDrawingX);
+
+    return (iter == notes.end()) ? chord->GetDrawingX() : (*iter)->GetDrawingX();
+}
 
 //----------------------------------------------------------------------------
 // BeamSegment
@@ -633,22 +648,9 @@ void BeamSegment::CalcBeamInit(
         // were played, possibly all to one side of it. The beam has to run between the stems that
         // are actually drawn, so the coord follows the outermost note on its side.
         if (coord->m_element->Is(CHORD)) {
-            Chord *chord = vrv_cast<Chord *>(coord->m_element);
+            const Chord *chord = vrv_cast<const Chord *>(coord->m_element);
             assert(chord);
-            if (chord->IsPerformanceSplit()) {
-                const bool toTheRight = (i == elementCount - 1);
-                bool first = true;
-                for (const Object *child : chord->GetList()) {
-                    const int noteX = child->GetDrawingX();
-                    if (first) {
-                        coord->m_x = noteX;
-                        first = false;
-                    }
-                    else {
-                        coord->m_x = toTheRight ? std::max(coord->m_x, noteX) : std::min(coord->m_x, noteX);
-                    }
-                }
-            }
+            if (chord->IsPerformanceSplit()) coord->m_x = GetSplitChordX(chord, (i == elementCount - 1));
         }
     }
 

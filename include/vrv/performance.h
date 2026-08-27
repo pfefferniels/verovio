@@ -8,7 +8,9 @@
 #ifndef __VRV_PERFORMANCE_H__
 #define __VRV_PERFORMANCE_H__
 
+#include <limits>
 #include <map>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -19,7 +21,7 @@
 namespace vrv {
 
 /** The opacity given to the softest note when velocity is rendered as ink density */
-#define PERFORMANCE_MIN_OPACITY 0.35
+constexpr double PERFORMANCE_MIN_OPACITY = 0.35;
 
 //----------------------------------------------------------------------------
 // PerformedEvent
@@ -57,14 +59,6 @@ struct PerformedEvent {
 class PerformedRecording {
 public:
     /**
-     * @name Constructors, destructors
-     */
-    ///@{
-    PerformedRecording() = default;
-    virtual ~PerformedRecording() = default;
-    ///@}
-
-    /**
      * @name Setters and getters for the identifiers
      */
     ///@{
@@ -87,41 +81,38 @@ public:
     const PerformedEvent *GetEvent(const std::string &xmlId) const;
 
     /**
-     * @name Extent of the recording
+     * @name Extent of the recording, 0.0 when it holds no event
      */
     ///@{
     bool IsEmpty() const { return m_events.empty(); }
     int GetEventCount() const { return static_cast<int>(m_events.size()); }
     /** Onset of the earliest event - what performed positions are normalised against */
-    double GetFirstOnsetMs() const { return m_firstOnsetMs; }
+    double GetFirstOnsetMs() const { return m_events.empty() ? 0.0 : m_firstOnsetMs; }
     /** Offset of the latest event */
-    double GetLastOffsetMs() const { return m_lastOffsetMs; }
+    double GetLastOffsetMs() const { return m_events.empty() ? 0.0 : m_lastOffsetMs; }
     /**
      * The range of the encoded velocities, VRV_UNSET when none carries one.
      * This is what velocity is mapped to ink density against, so that the density means
      * something whatever range the source happens to use.
      */
-    int GetMinVelocity() const { return m_minVelocity; }
-    int GetMaxVelocity() const { return m_maxVelocity; }
+    int GetMinVelocity() const { return this->HasVelocities() ? m_minVelocity : VRV_UNSET; }
+    int GetMaxVelocity() const { return this->HasVelocities() ? m_maxVelocity : VRV_UNSET; }
     ///@}
 
 private:
-    //
-public:
-    //
-private:
+    bool HasVelocities() const { return (m_minVelocity <= m_maxVelocity); }
+
     /** From <recording>@xml:id */
     std::string m_id;
     /** From <recording>@source */
     std::string m_source;
     /** Events indexed by the xml:id of the score element they align to */
     std::map<std::string, PerformedEvent> m_events;
-    /** Extent, maintained by AddEvent */
-    double m_firstOnsetMs = 0.0;
-    double m_lastOffsetMs = 0.0;
-    bool m_hasEventExtent = false;
-    int m_minVelocity = VRV_UNSET;
-    int m_maxVelocity = VRV_UNSET;
+    /** Extent, maintained by AddEvent, and left at the identity while there is no event */
+    double m_firstOnsetMs = std::numeric_limits<double>::max();
+    double m_lastOffsetMs = std::numeric_limits<double>::lowest();
+    int m_minVelocity = std::numeric_limits<int>::max();
+    int m_maxVelocity = std::numeric_limits<int>::lowest();
 };
 
 //----------------------------------------------------------------------------
@@ -137,19 +128,11 @@ private:
  */
 class PerformanceData {
 public:
-    /**
-     * @name Constructors, destructors
-     */
-    ///@{
-    PerformanceData() = default;
-    virtual ~PerformanceData() = default;
-    ///@}
-
     /** Drop all recordings */
     void Reset();
 
-    /** Append an empty recording and return it for filling */
-    PerformedRecording *AddRecording();
+    /** Append a recording */
+    void AddRecording(PerformedRecording recording);
 
     /**
      * @name Access to the recordings
@@ -157,6 +140,7 @@ public:
     ///@{
     bool HasRecordings() const { return !m_recordings.empty(); }
     int GetRecordingCount() const { return static_cast<int>(m_recordings.size()); }
+    const std::vector<PerformedRecording> &GetRecordings() const { return m_recordings; }
     /**
      * Select a recording by 1-based index ("1", "2", ...) or by its @xml:id or @source.
      * An empty selector returns the first recording. Returns NULL when nothing matches.
@@ -167,14 +151,10 @@ public:
     /**
      * Parse an MEI time value into milliseconds.
      * Accepts the "28618ms" and "12.5s" forms used with @abstype="smil", as well as a
-     * bare number, which is read as milliseconds. Sets ok to false when unparsable.
+     * bare number, which is read as milliseconds. Returns nothing when unparsable.
      */
-    static double ParseTimeToMs(const std::string &value, bool *ok = NULL);
+    static std::optional<double> ParseTimeToMs(const std::string &value);
 
-private:
-    //
-public:
-    //
 private:
     std::vector<PerformedRecording> m_recordings;
 };
