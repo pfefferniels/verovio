@@ -10,7 +10,7 @@
 
 #include <map>
 #include <string>
-#include <unordered_set>
+#include <unordered_map>
 #include <vector>
 
 //----------------------------------------------------------------------------
@@ -240,6 +240,9 @@ private:
     /** Anchor the performed time of the system opened by the measure being visited */
     void CalcSystemTimeOrigin(int leftBarLineXRel);
 
+    /** The event of the attack a note tied over is still sounding, NULL when there is none */
+    const PerformedEvent *GetTieStartEvent(const std::string &xmlId) const;
+
     /** The recording being laid out */
     const PerformedRecording *m_recording;
     /** The notated to performed time map of the recording */
@@ -248,8 +251,8 @@ private:
     double m_unitsPerMs = 0.0;
     /** The performed time drawn at the left edge of the current system */
     double m_systemOriginMs = 0.0;
-    /** The notes that end a tie - they are not sounded again, so they are never aligned */
-    std::unordered_set<std::string> m_tieEnds;
+    /** The note ending a tie mapped to the note it is tied from, which is where it was struck */
+    std::unordered_map<std::string, std::string> m_tiedFrom;
     /** The last measure of the document, the only one whose right barline closes the score */
     const Object *m_lastMeasure = NULL;
     /** The notated time at the start of the current measure, in whole notes */

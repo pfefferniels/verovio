@@ -10,6 +10,7 @@
 //----------------------------------------------------------------------------
 
 #include <algorithm>
+#include <iterator>
 #include <numeric>
 #include <ranges>
 
@@ -189,12 +190,14 @@ CalcPerformanceXPosFunctor::CalcPerformanceXPosFunctor(
     m_unitsPerMs = unitsPerSecond * doc->GetDrawingUnit(100) / 1000.0;
 
     // The second note of a tie is not attacked again, so the recording never aligns it - it is
-    // placed by the map, but it is not a note the alignment failed on. The lookup is on the whole
-    // document because after the cast-off a tie can be on another page than the note it ends on.
-    for (Object *object : doc->FindAllDescendantsByType(TIE)) {
-        const Tie *tie = vrv_cast<const Tie *>(object);
-        if (tie->GetEnd()) m_tieEnds.insert(tie->GetEnd()->GetID());
-    }
+    // placed by the map, but it is not a note the alignment failed on, and it sounds on with what
+    // the note it is tied from was struck with. The lookup is on the whole document because after
+    // the cast-off a tie can be on another page than the note it ends on.
+    const ListOfObjects ties = doc->FindAllDescendantsByType(TIE);
+    auto resolved = ties | std::views::transform([](Object *object) { return vrv_cast<const Tie *>(object); })
+        | std::views::filter([](const Tie *tie) { return tie->GetStart() && tie->GetEnd(); });
+    std::ranges::transform(resolved, std::inserter(m_tiedFrom, m_tiedFrom.end()),
+        [](const Tie *tie) { return std::pair(tie->GetEnd()->GetID(), tie->GetStart()->GetID()); });
 
     // The map is built one page at a time, so every page ends with a barline that has nothing
     // after it. Only one of them closes the score, and the document is what knows which.
@@ -260,6 +263,22 @@ void CalcPerformanceXPosFunctor::CalcSystemTimeOrigin(int leftBarLineXRel)
     // barline, which is a little before the first onset the system holds
     const double gutterMs = m_systemOriginMs - (m_timeOriginX - m_systemX - leftBarLineXRel) / m_unitsPerMs;
     m_currentSystem->SetPerformanceOrigin(gutterMs, leftBarLineXRel);
+}
+
+const PerformedEvent *CalcPerformanceXPosFunctor::GetTieStartEvent(const std::string &xmlId) const
+{
+    // In a chain of ties only the first note is struck, so the walk goes on until an aligned note
+    // is found. It is bounded so that data with a tie looping back on itself cannot spin here.
+    std::string id = xmlId;
+    for (size_t step = 0; step < m_tiedFrom.size(); ++step) {
+        const auto tied = m_tiedFrom.find(id);
+        if (tied == m_tiedFrom.end()) return NULL;
+
+        id = tied->second;
+        if (const PerformedEvent *event = m_recording->GetEvent(id)) return event;
+    }
+
+    return NULL;
 }
 
 FunctorCode CalcPerformanceXPosFunctor::VisitSystem(System *system)
@@ -361,7 +380,12 @@ FunctorCode CalcPerformanceXPosFunctor::VisitLayerElement(LayerElement *layerEle
         // a tie is not, since it is never attacked.
         PerformedEvent interpolated;
         interpolated.onsetMs = m_map.NotatedToMs(notatedTime);
-        interpolated.matched = m_tieEnds.contains(layerElement->GetID());
+        interpolated.matched = m_tiedFrom.contains(layerElement->GetID());
+        // It sounds on with the velocity it was struck with, so that both halves of a tie are
+        // drawn with the same ink density. Its duration is not, being measured from the attack.
+        if (const PerformedEvent *struck = this->GetTieStartEvent(layerElement->GetID())) {
+            interpolated.velocity = struck->velocity;
+        }
         layerElement->m_perfEvent = interpolated;
     }
 
