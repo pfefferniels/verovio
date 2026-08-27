@@ -61,6 +61,12 @@ PerformanceMap::PerformanceMap(std::vector<PerformedOnset> onsets, MapOfNoteEven
         iter = chunk.end();
     }
 
+    // Where the sound of the score ends, which is the only place a duration is laid out rather
+    // than the distance to the next onset. A note held under a fermata reaches past every onset.
+    for (const PerformedOnset &onset : onsets) {
+        m_lastOffsetMs = std::max(m_lastOffsetMs, onset.offsetMs);
+    }
+
     // The rate used before the first and after the last knot, in ms per whole note
     if (m_knots.size() >= 2) {
         const double notatedSpan = m_knots.back().notatedTime.ToDouble() - m_knots.front().notatedTime.ToDouble();
@@ -128,7 +134,7 @@ PerformanceMap CalcPerformanceMapFunctor::BuildMap() const
     for (const PendingNote &pending : m_pending) {
         auto iter = m_noteEvents.find({ pending.notatedTime, pending.pitch });
         if (iter != m_noteEvents.end()) {
-            onsets.push_back({ pending.notatedTime, iter->second.onsetMs, pending.xRel });
+            onsets.push_back({ pending.notatedTime, iter->second.onsetMs, iter->second.GetOffsetMs(), pending.xRel });
         }
     }
 
@@ -145,7 +151,7 @@ FunctorCode CalcPerformanceMapFunctor::VisitLayerElement(LayerElement *layerElem
     const bool isNote = layerElement->Is(NOTE);
 
     if (event) {
-        m_onsets.push_back({ notatedTime, event->onsetMs, layerElement->GetDrawingXRel() });
+        m_onsets.push_back({ notatedTime, event->onsetMs, event->GetOffsetMs(), layerElement->GetDrawingXRel() });
         if (isNote) {
             const Note *note = vrv_cast<const Note *>(layerElement);
             m_noteEvents.insert({ { notatedTime, note->GetMIDIPitch() }, *event });
@@ -189,6 +195,11 @@ CalcPerformanceXPosFunctor::CalcPerformanceXPosFunctor(
         const Tie *tie = vrv_cast<const Tie *>(object);
         if (tie->GetEnd()) m_tieEnds.insert(tie->GetEnd()->GetID());
     }
+
+    // The map is built one page at a time, so every page ends with a barline that has nothing
+    // after it. Only one of them closes the score, and the document is what knows which.
+    const ListOfObjects measures = doc->FindAllDescendantsByType(MEASURE);
+    if (!measures.empty()) m_lastMeasure = measures.back();
 }
 
 int CalcPerformanceXPosFunctor::MsToX(double ms) const
@@ -196,14 +207,22 @@ int CalcPerformanceXPosFunctor::MsToX(double ms) const
     return m_timeOriginX + static_cast<int>((ms - m_systemOriginMs) * m_unitsPerMs);
 }
 
-int CalcPerformanceXPosFunctor::CalcBarLineX(const Fraction &notatedTime) const
+int CalcPerformanceXPosFunctor::CalcBarLineX(const Fraction &notatedTime, bool closesScore) const
 {
     // The first note of the measure the barline opens, and the last one before it
     const PerformanceWindow window = m_map.GetBarLineWindow(notatedTime);
     if (!window.before && !window.after) return this->MsToX(m_map.NotatedToMs(notatedTime));
 
     const int unit = m_doc->GetDrawingUnit(100);
-    if (!window.after) return this->MsToX(window.before->lastMs) + unit * 2;
+    if (!window.after) {
+        // The barline closing the score announces no downbeat, so it goes after the sound has
+        // stopped and not after the last attack - which is what leaves a final chord held under
+        // a fermata the room it was played for. Anywhere else the duration says nothing about
+        // where the barline belongs, since it is the next onset that carries the music on.
+        const double ms
+            = closesScore ? std::max(m_map.GetLastOffsetMs(), window.before->lastMs) : window.before->lastMs;
+        return this->MsToX(ms) + unit * 2;
+    }
 
     // A chord rolled across the downbeat starts before the beat it belongs to, so the barline
     // goes by the earliest of those onsets, never by their mean. A notehead displaced to the
@@ -234,7 +253,7 @@ void CalcPerformanceXPosFunctor::CalcSystemTimeOrigin(int leftBarLineXRel)
     // gutter and is pinned to the end of it, which the whole system is shifted by - a barline
     // stands ahead of the downbeat it announces, so without this the measure would reach back
     // past the edge of the system.
-    m_timeOriginX += (m_systemX + leftBarLineXRel) - this->CalcBarLineX(m_measureTime);
+    m_timeOriginX += (m_systemX + leftBarLineXRel) - this->CalcBarLineX(m_measureTime, false);
     if (!m_currentSystem) return;
 
     // The time the ruler reads at the left edge of the content is the one that falls on the
@@ -265,6 +284,8 @@ FunctorCode CalcPerformanceXPosFunctor::VisitSystemEnd(System *system)
 
 FunctorCode CalcPerformanceXPosFunctor::VisitMeasure(Measure *measure)
 {
+    m_isLastMeasureInScore = (measure == m_lastMeasure);
+
     // Everything up to and including the left barline keeps the position that the ordinary
     // spacing gave it, so performed time starts only after that gutter.
     const int leftBarLineXRel = measure->GetLeftBarLineXRel();
@@ -272,7 +293,7 @@ FunctorCode CalcPerformanceXPosFunctor::VisitMeasure(Measure *measure)
 
     // The left barline of the measure goes between the last note before it and the first
     // note of its downbeat
-    m_measureX = this->CalcBarLineX(m_measureTime) - leftBarLineXRel;
+    m_measureX = this->CalcBarLineX(m_measureTime, false) - leftBarLineXRel;
     measure->SetDrawingXRel(m_measureX - m_systemX);
 
     // The aligners are not reached by the page traversal
@@ -300,7 +321,8 @@ FunctorCode CalcPerformanceXPosFunctor::VisitAlignment(Alignment *alignment)
     // The closing barline is placed the same way as the opening one of the next measure, so that
     // the two meet and the staff lines run on without a gap
     const bool isBarLine = (alignment->GetType() >= ALIGNMENT_MEASURE_RIGHT_BARLINE);
-    const int x = isBarLine ? this->CalcBarLineX(notatedTime) : this->MsToX(m_map.NotatedToMs(notatedTime));
+    const int x = isBarLine ? this->CalcBarLineX(notatedTime, m_isLastMeasureInScore)
+                            : this->MsToX(m_map.NotatedToMs(notatedTime));
     alignment->SetXRel(x - m_measureX);
 
     // Grace notes are stacked to the left of the note they belong to

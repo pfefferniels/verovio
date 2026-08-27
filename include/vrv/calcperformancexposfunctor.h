@@ -33,6 +33,8 @@ namespace vrv {
 struct PerformedOnset {
     Fraction notatedTime;
     double onsetMs = 0.0;
+    /** When the note stops sounding, i.e. its onset plus its duration */
+    double offsetMs = 0.0;
     /** The offset of the element within its alignment, negative when it is displaced to the left */
     int xRel = 0;
 };
@@ -96,6 +98,14 @@ public:
     double NotatedToMs(const Fraction &notatedTime) const;
 
     /**
+     * The performed time at which the last note of the map stops sounding.
+     * Only the end of the score is placed by it: everywhere else a note is followed by another
+     * one, and it is the next onset that says where the music went on, not how long the previous
+     * note was held. Equal to the last onset when the recording encodes no duration.
+     */
+    double GetLastOffsetMs() const { return m_lastOffsetMs; }
+
+    /**
      * The knots a barline at the given notated time falls between - the last onset before it and
      * the first at or after it. Either of them is NULL at the ends of the map.
      */
@@ -114,6 +124,8 @@ private:
     MapOfNoteEvents m_noteEvents;
     /** The rate used outside the extent of the map, in ms per whole note */
     double m_fallbackRate = 2000.0;
+    /** When the last note still sounding stops, see GetLastOffsetMs */
+    double m_lastOffsetMs = 0.0;
 };
 
 //----------------------------------------------------------------------------
@@ -220,8 +232,10 @@ private:
      * The position of the barline at a notated time. A barline has no performed time of its own,
      * so it goes between the last note before it and the first note after it - which matters
      * because a chord rolled across the downbeat starts before the beat it belongs to.
+     * The barline that closes the score is the one case with no note after it to go by, and is
+     * placed at the moment the performance stopped sounding instead.
      */
-    int CalcBarLineX(const Fraction &notatedTime) const;
+    int CalcBarLineX(const Fraction &notatedTime, bool closesScore) const;
 
     /** Anchor the performed time of the system opened by the measure being visited */
     void CalcSystemTimeOrigin(int leftBarLineXRel);
@@ -236,6 +250,8 @@ private:
     double m_systemOriginMs = 0.0;
     /** The notes that end a tie - they are not sounded again, so they are never aligned */
     std::unordered_set<std::string> m_tieEnds;
+    /** The last measure of the document, the only one whose right barline closes the score */
+    const Object *m_lastMeasure = NULL;
     /** The notated time at the start of the current measure, in whole notes */
     Fraction m_measureTime;
     /** The system being visited */
@@ -246,6 +262,8 @@ private:
     int m_timeOriginX = 0;
     /** Whether the measure being visited opens its system */
     bool m_isFirstMeasureInSystem = true;
+    /** Whether the measure being visited is the one that closes the score */
+    bool m_isLastMeasureInScore = false;
     /** The drawing X of the measure being visited */
     int m_measureX = 0;
     /** The extent of the current system, used to give it its width */
