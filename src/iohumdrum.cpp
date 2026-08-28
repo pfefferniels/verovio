@@ -26590,6 +26590,24 @@ void HumdrumInput::convertNote(Note *note, hum::HTp token, int staffadj, int sta
     // always show mensural accidentals
     // bool showInAccid = true;
     bool showInAccidGes = false;
+
+    // An accidental marked "y" sounds but is not printed: the encoder is saying
+    // that the pitch is altered while the sign is left off the page, typically
+    // because an earlier accidental in the bar -- often in another octave --
+    // already established it.  HumdrumFileContent::analyzeKernAccidentals()
+    // knows the accidental is needed and suppresses it anyway ("only print if
+    // not supposed to be hidden"), so hasVisibleAccidental() is false and
+    // nothing below would record the alteration at all.  The note would then
+    // read back at whatever the key signature gives, a semitone from what was
+    // written.  Keep the sounding pitch in @accid.ges.
+    // Note that "yy" means an invisible note rather than a hidden accidental.
+    bool hiddenAccidQ = false;
+    if (tstring.find("yy") == std::string::npos) {
+        if ((tstring.find("ny") != std::string::npos) || (tstring.find("#y") != std::string::npos)
+            || (tstring.find("-y") != std::string::npos)) {
+            hiddenAccidQ = true;
+        }
+    }
     bool brackQ = hasLayoutParameter(token, "ACC", "brack");
     bool parenQ = hasLayoutParameter(token, "ACC", "paren");
     std::string loaccid = token->getLayoutParameter("N", "acc", subtoken);
@@ -26889,6 +26907,17 @@ void HumdrumInput::convertNote(Note *note, hum::HTp token, int staffadj, int sta
                         case -1: accid->SetAccidGes(ACCIDENTAL_GESTURAL_f); break;
                         case -2: accid->SetAccidGes(ACCIDENTAL_GESTURAL_ff); break;
                     }
+                }
+            }
+            else if (hiddenAccidQ) {
+                // Nothing is drawn, but the note still sounds altered, so the
+                // alteration is the only thing worth writing down.
+                switch (accidCount) {
+                    case +2: accid->SetAccidGes(ACCIDENTAL_GESTURAL_ss); break;
+                    case +1: accid->SetAccidGes(ACCIDENTAL_GESTURAL_s); break;
+                    case 0: accid->SetAccidGes(ACCIDENTAL_GESTURAL_n); break;
+                    case -1: accid->SetAccidGes(ACCIDENTAL_GESTURAL_f); break;
+                    case -2: accid->SetAccidGes(ACCIDENTAL_GESTURAL_ff); break;
                 }
             }
         }
