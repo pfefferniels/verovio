@@ -16,12 +16,45 @@
 
 //----------------------------------------------------------------------------
 
+#include "fraction.h"
 #include "vrvdef.h"
 
 namespace vrv {
 
 /** The opacity given to the softest note when velocity is rendered as ink density */
 constexpr double PERFORMANCE_MIN_OPACITY = 0.35;
+
+//----------------------------------------------------------------------------
+// PerformanceSegment
+//----------------------------------------------------------------------------
+
+/**
+ * What a measure that came out of a cut by performed time knows about itself.
+ *
+ * Cutting the systems by time splits a measure into several of them, and each part has to keep
+ * saying how long it is: the notated time the layout runs on is accumulated from one measure to
+ * the next, so a part that ended at its last note rather than at the cut would put everything
+ * after it out of step with the recording.
+ */
+struct PerformanceSegment {
+    /** The notated duration of the segment, which is what pins the right barline of its aligner */
+    Fraction duration;
+    /** True when the segment continues a measure that was cut before it */
+    bool isContinuation = false;
+    /** True when a system break falls on the left edge of the segment */
+    bool startsSystem = false;
+    /**
+     * @name The performed times the segment was cut at, which are what its edges are drawn at.
+     * Set only where the edge is a cut: a segment opening a system knows the moment its system
+     * starts at, and a segment cut at its end knows the moment the next one starts at. Drawing
+     * both from the cut rather than from the music around it is what makes every system cover
+     * exactly the span of the recording it was asked for.
+     */
+    ///@{
+    std::optional<double> startMs;
+    std::optional<double> endMs;
+    ///@}
+};
 
 //----------------------------------------------------------------------------
 // PerformedEvent

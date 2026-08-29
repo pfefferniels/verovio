@@ -10,6 +10,7 @@
 
 #include "atts_shared.h"
 #include "drawinginterface.h"
+#include "fraction.h"
 #include "object.h"
 
 namespace vrv {
@@ -249,6 +250,17 @@ public:
     ///@}
 
     /**
+     * @name Setter and getter for the notated time at which the layer starts within its measure.
+     * Zero everywhere but in a measure cut by performed time, where a layer whose note is held
+     * across the cut only resumes some way into the part that follows it. The alignment starts
+     * counting from there, which is what keeps the layers of a cut measure in step.
+     */
+    //@{
+    void SetSegmentStartTime(const Fraction &time) { m_segmentStartTime = time; }
+    Fraction GetSegmentStartTime() const { return m_segmentStartTime; }
+    ///@}
+
+    /**
      * @name Setter and getter for cursor
      */
     //@{
@@ -287,6 +299,11 @@ private:
      */
     bool m_crossStaffFromBelow;
     bool m_crossStaffFromAbove;
+
+    /**
+     * The notated time at which the layer starts within its measure, see SetSegmentStartTime
+     */
+    Fraction m_segmentStartTime;
 
     /** */
     Clef *m_staffDefClef;

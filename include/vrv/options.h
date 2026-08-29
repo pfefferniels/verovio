@@ -87,6 +87,8 @@ enum option_MULTIRESTSTYLE {
     MULTIRESTSTYLE_symbols
 };
 
+enum option_PERFORMANCE_BREAKS { PERFORMANCE_BREAKS_time = 0, PERFORMANCE_BREAKS_measure };
+
 enum option_PERFORMANCE_UNMATCHED {
     PERFORMANCE_UNMATCHED_mark = 0,
     PERFORMANCE_UNMATCHED_plain,
@@ -176,6 +178,7 @@ public:
     static const std::map<int, std::string> s_mensuralResponsiveness;
     static const std::map<int, std::string> s_multiRestStyle;
     static const std::map<int, std::string> s_pedalStyle;
+    static const std::map<int, std::string> s_performanceBreaks;
     static const std::map<int, std::string> s_performanceUnmatched;
     static const std::map<int, std::string> s_systemDivider;
     static const std::map<int, std::string> s_smuflTextFont;
@@ -913,6 +916,7 @@ public:
     OptionGrp m_performance;
 
     OptionBool m_performanceAlignment;
+    OptionIntMap m_performanceBreaks;
     OptionString m_performanceRecording;
     OptionDbl m_performanceScale;
     OptionDbl m_performanceSystemDuration;

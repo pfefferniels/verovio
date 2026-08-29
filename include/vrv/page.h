@@ -103,6 +103,13 @@ public:
     bool LayOutPerformance();
 
     /**
+     * Cut the measures of the page where the systems are to open, so that a system break can fall
+     * within a measure rather than only at a barline. Returns true when anything was cut, in which
+     * case the horizontal layout has to be redone before the page can be positioned.
+     */
+    bool CutPerformanceSystems();
+
+    /**
      * Move the content of the page to its performed position.
      * Separated from LayOutPerformance because it also has to be redone once the systems have
      * been cast off, so that each system is measured at the position it will be drawn at.

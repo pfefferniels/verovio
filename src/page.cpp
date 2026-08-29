@@ -63,6 +63,7 @@
 #include "pghead.h"
 #include "resetfunctor.h"
 #include "score.h"
+#include "splitperformancefunctor.h"
 #include "staff.h"
 #include "system.h"
 #include "view.h"
@@ -418,7 +419,57 @@ bool Page::LayOutPerformance()
     // within a note and the bounding boxes are all wanted as they are.
     this->LayOutHorizontally();
 
+    // Where the systems are cut by the clock, the measures have to be taken apart first and the
+    // layout redone for the parts that came out of it. Where the cuts fall is decided once, on the
+    // page holding the whole score, and not again on each of the systems the cast-off made of it.
+    if (!doc->IsCastOff() && doc->IsPerformanceCutByTime() && this->CutPerformanceSystems()) {
+        // The content that moved is still pointing at the aligner of the measure it came from, and
+        // everything the data preparation had worked out about where an element sits - the staff a
+        // beam is drawn against, the measure a slur starts in - was worked out about a score whose
+        // measures had not been cut yet, so it is all derived again from the tree as it now is.
+        ResetHorizontalAlignmentFunctor resetHorizontalAlignment;
+        this->Process(resetHorizontalAlignment);
+        doc->PrepareData();
+        doc->ScoreDefSetCurrentDoc(true);
+        this->LayOutHorizontally();
+    }
+
     return this->ApplyPerformanceXPos();
+}
+
+bool Page::CutPerformanceSystems()
+{
+    Doc *doc = vrv_cast<Doc *>(this->GetFirstAncestor(DOC));
+    assert(doc);
+
+    const PerformedRecording *recording = doc->GetSelectedRecording();
+    if (!recording) return false;
+
+    // A page can already hold measures cut by an earlier layout, and the cuts of that layout are
+    // not the ones this one wants
+    MergePerformanceMeasuresFunctor mergePerformanceMeasures;
+    this->Process(mergePerformanceMeasures);
+    const bool merged = (mergePerformanceMeasures.DeleteMergedMeasures() > 0);
+    if (merged) {
+        ResetHorizontalAlignmentFunctor resetHorizontalAlignment;
+        this->Process(resetHorizontalAlignment);
+        doc->PrepareData();
+        doc->ScoreDefSetCurrentDoc(true);
+        this->LayOutHorizontally();
+    }
+
+    CalcPerformanceMapFunctor calcPerformanceMap(doc, recording);
+    this->Process(calcPerformanceMap);
+
+    const PerformanceMap map = calcPerformanceMap.BuildMap();
+    if (map.IsEmpty()) return merged;
+
+    const double intervalMs = doc->GetOptions()->m_performanceSystemDuration.GetValue() * 1000.0;
+
+    CalcPerformanceBreaksFunctor calcPerformanceBreaks(doc, map, recording->GetFirstOnsetMs(), intervalMs);
+    this->Process(calcPerformanceBreaks);
+
+    return ((CutPerformanceMeasures(calcPerformanceBreaks.GetBreakPoints()) > 0) || merged);
 }
 
 bool Page::ApplyPerformanceXPos()

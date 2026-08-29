@@ -118,6 +118,9 @@ void Measure::CloneReset()
 
     // owned pointers need to be set to NULL;
     m_drawingScoreDef = NULL;
+
+    // A clone is not one of the parts a measure was cut into, whatever it was cloned from
+    m_performanceSegment.reset();
 }
 
 void Measure::Reset()
@@ -133,6 +136,7 @@ void Measure::Reset()
     this->ResetTyped();
 
     m_index = VRV_UNSET;
+    m_performanceSegment.reset();
 
     this->ResetDrawingScoreDef();
 

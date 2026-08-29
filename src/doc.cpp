@@ -58,6 +58,7 @@
 #include "setscoredeffunctor.h"
 #include "slur.h"
 #include "smufl.h"
+#include "splitperformancefunctor.h"
 #include "staff.h"
 #include "staffdef.h"
 #include "staffgrp.h"
@@ -202,6 +203,15 @@ bool Doc::IsPerformanceAligned() const
     if (!m_options->m_performanceAlignment.GetValue()) return false;
 
     return (this->GetSelectedRecording() != NULL);
+}
+
+bool Doc::IsPerformanceCutByTime() const
+{
+    if (!this->IsPerformanceAligned()) return false;
+    if (m_options->m_performanceBreaks.GetValue() != PERFORMANCE_BREAKS_time) return false;
+
+    // Without a system duration everything goes on a single system, so there is nothing to cut
+    return (m_options->m_performanceSystemDuration.GetValue() > 0.0);
 }
 
 int Doc::GetPerformanceRulerHeight() const
@@ -1139,6 +1149,7 @@ void Doc::CastOffDocBase(bool useSb, bool usePb, bool smart)
         CastOffSystemsFunctor castOffSystems(castOffSinglePage, this, smart);
         castOffSystems.SetSystemWidth(
             performanceAligned ? this->GetPerformanceSystemWidth() : m_drawingPageContentWidth);
+        castOffSystems.SetPerformanceBreaks(this->IsPerformanceCutByTime());
         unCastOffPage->Process(castOffSystems);
         leftoverSystem = castOffSystems.GetLeftoverSystem();
     }
@@ -1229,6 +1240,26 @@ void Doc::UnCastOffDoc(bool resetCache)
     pages->ClearChildren();
 
     pages->AddChild(unCastOffPage);
+
+    // A measure that was cut by performed time goes back together, so that the score is the one it
+    // was encoded as and a second layout can cut it wherever its own system duration asks for
+    MergePerformanceMeasuresFunctor mergePerformanceMeasures;
+    unCastOffPage->Process(mergePerformanceMeasures);
+    if (mergePerformanceMeasures.DeleteMergedMeasures() > 0) {
+        // The aligners the merged content was pointing at are gone with the parts that held them,
+        // and the cached widths describe measures that no longer exist
+        ResetHorizontalAlignmentFunctor resetHorizontalAlignment;
+        unCastOffPage->Process(resetHorizontalAlignment);
+        for (Object *object : unCastOffPage->FindAllDescendantsByType(MEASURE, false)) {
+            Measure *measure = vrv_cast<Measure *>(object);
+            measure->ResetCachedXRel();
+            measure->ResetCachedWidth();
+            measure->ResetCachedOverflow();
+        }
+        // Everything that was worked out about where an element sits was worked out about the
+        // measures as they had been cut, and has to be derived again from the score put back together
+        this->PrepareData();
+    }
 
     // LogDebug("ContinuousLayout: %d pages", this->GetChildCount());
 

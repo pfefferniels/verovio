@@ -58,6 +58,7 @@ CastOffSystemsFunctor::CastOffSystemsFunctor(Page *page, Doc *doc, bool smart) :
     m_systemWidth = 0;
     m_currentScoreDefWidth = 0;
     m_smart = smart;
+    m_performanceBreaks = false;
 }
 
 FunctorCode CastOffSystemsFunctor::VisitEditorialElement(EditorialElement *editorialElement)
@@ -103,9 +104,17 @@ FunctorCode CastOffSystemsFunctor::VisitMeasure(Measure *measure)
     Object *nextMeasure = m_contentSystem->GetNext(measure, MEASURE);
     const bool isLeftoverMeasure = ((NULL == nextMeasure) && m_doc->GetOptions()->m_breaksNoWidow.GetValue()
         && (m_doc->GetOptions()->m_breaks.GetValue() != BREAKS_encoded));
+    // When the measures were cut by performed time, a system opens where the cut was made and
+    // nowhere else: the width is the duration, and holding a measure back or letting the gutter of
+    // the scoreDef run it over would put the systems out of step with the clock
+    const bool holdBack = !m_performanceBreaks && (overflow > (m_doc->GetDrawingUnit(100) * 5));
+    const bool breakHere = m_performanceBreaks
+        ? measure->StartsPerformanceSystem()
+        : (drawingXRel + width + m_currentScoreDefWidth - m_shift > m_systemWidth);
+
     if (m_currentSystem->GetChildCount() > 0) {
         // We have overflowing content (dir, dynam, tempo) larger than 5 units, keep it as pending
-        if (overflow > (m_doc->GetDrawingUnit(100) * 5)) {
+        if (holdBack) {
             measure = dynamic_cast<Measure *>(m_contentSystem->Relinquish(measure->GetIdx()));
             assert(measure);
             // move as pending since we want it not to be broken with the next measure
@@ -114,7 +123,7 @@ FunctorCode CastOffSystemsFunctor::VisitMeasure(Measure *measure)
             return FUNCTOR_SIBLINGS;
         }
         // Break it if necessary
-        else if (drawingXRel + width + m_currentScoreDefWidth - m_shift > m_systemWidth) {
+        else if (breakHere) {
             m_currentSystem = new System();
             m_page->AddChild(m_currentSystem);
             m_shift = drawingXRel;

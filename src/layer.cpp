@@ -92,6 +92,7 @@ void Layer::Reset()
     m_drawingStemDir = STEMDIRECTION_NONE;
     m_crossStaffFromAbove = false;
     m_crossStaffFromBelow = false;
+    m_segmentStartTime = 0;
 }
 
 void Layer::CloneReset()
@@ -114,6 +115,7 @@ void Layer::CloneReset()
     m_drawingStemDir = STEMDIRECTION_NONE;
     m_crossStaffFromAbove = false;
     m_crossStaffFromBelow = false;
+    m_segmentStartTime = 0;
 }
 
 void Layer::ResetStaffDefObjects()

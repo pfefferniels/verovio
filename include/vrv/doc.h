@@ -529,6 +529,12 @@ public:
     bool IsPerformanceAligned() const;
 
     /**
+     * Return true when the systems of the performed layout are cut by the performed time rather
+     * than at the barlines, which is what lets a system break fall within a measure.
+     */
+    bool IsPerformanceCutByTime() const;
+
+    /**
      * Return the recording selected with the performanceRecording option, or NULL.
      */
     const PerformedRecording *GetSelectedRecording() const;

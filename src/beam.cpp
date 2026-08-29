@@ -1846,26 +1846,31 @@ void BeamSpanSegment::AppendSpanningCoordinates(const Measure *measure)
         slope = (double)(back->m_yBeam - front->m_yBeam) / (double)(back->m_x - front->m_x);
     }
 
-    // in case if beamSpan starts in current system - stretch beam to the right barline
+    // How far the beam reaches past the notes of this system where there is nothing to measure
+    // it by - half the distance between two of them, or a fixed length when it holds only one
+    int offset = 0;
+    if (m_beamElementCoordRefs.size() > 1) {
+        const int divideBy = 2 * ((int)m_beamElementCoordRefs.size() - 1);
+        offset = (back->m_x - front->m_x) / divideBy;
+    }
+    else {
+        // 1.5 * unit offset in this case (hardcoded for the time being)
+        offset = 270;
+    }
+
+    // in case if beamSpan starts in current system - stretch beam to the right barline. A note
+    // played later than the moment its system was cut at is drawn past that barline, and the beam
+    // then reaches past the note rather than back to the barline behind it.
     if ((SPANNING_START == spanningType) || (SPANNING_MIDDLE == spanningType)) {
         BeamElementCoord *right = new BeamElementCoord(*back);
-        const int distance = rightSide - back->m_x;
-        right->m_x = rightSide;
+        const int distance = (rightSide > back->m_x) ? (rightSide - back->m_x) : offset;
+        right->m_x = back->m_x + distance;
         right->m_yBeam += distance * slope;
         m_beamElementCoordRefs.push_back(right);
     }
     // otherwise start beam closer to the start of the Measure, to indicate spanning
     if ((SPANNING_END == spanningType) || (SPANNING_MIDDLE == spanningType)) {
         BeamElementCoord *left = new BeamElementCoord(*front);
-        int offset = 0;
-        if (m_beamElementCoordRefs.size() > 1) {
-            const int divideBy = 2 * ((int)m_beamElementCoordRefs.size() - 1);
-            offset = (back->m_x - front->m_x) / divideBy;
-        }
-        else {
-            // 1.5 * unit offset in this case (hardcoded for the time being)
-            offset = 270;
-        }
         left->m_x -= offset;
         left->m_yBeam -= offset * slope;
         m_beamElementCoordRefs.insert(m_beamElementCoordRefs.begin(), left);

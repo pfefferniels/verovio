@@ -108,8 +108,9 @@ FunctorCode AlignHorizontallyFunctor::VisitLayer(Layer *layer)
 
     m_scoreDefRole = SCOREDEF_NONE;
 
-    // Now we have to set it to 0.0 since we will start aligning musical content
-    m_time = 0;
+    // Now we have to set it to 0.0 since we will start aligning musical content - except in a
+    // measure cut by performed time, where the layer only resumes some way into the measure
+    m_time = layer->GetSegmentStartTime();
 
     return FUNCTOR_CONTINUE;
 }
@@ -443,6 +444,13 @@ FunctorCode AlignHorizontallyFunctor::VisitMeasureEnd(Measure *measure)
     data_DURATION meterUnit = (m_currentParams.meterSig && m_currentParams.meterSig->HasUnit())
         ? m_currentParams.meterSig->GetUnitAsDur()
         : DURATION_4;
+    // A measure cut by performed time is as long as the cut made it, and neither as short as its
+    // last onset nor as long as a note held across the cut goes on sounding - otherwise the notated
+    // time would not add up over the cut and everything after it would be out of step
+    if (measure->GetPerformanceSegment()) {
+        measure->m_measureAligner.ForceMaxTime(measure->GetPerformanceSegment()->duration);
+    }
+
     measure->m_measureAligner.SetInitialTstamp(meterUnit);
 
     // We also need to align the timestamps - we do it at the end since we need the *meterSig to be initialized by a

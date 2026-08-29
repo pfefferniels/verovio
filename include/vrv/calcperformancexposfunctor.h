@@ -9,6 +9,7 @@
 #define __VRV_CALCPERFORMANCEXPOSFUNCTOR_H__
 
 #include <map>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -96,6 +97,16 @@ public:
 
     /** Convert a notated time (in whole notes, from the start of the score) to performed ms */
     double NotatedToMs(const Fraction &notatedTime) const;
+
+    /**
+     * The notated time at which a performed time falls, the inverse of NotatedToMs.
+     * Rounded to a grid fine enough that the notated time of a cut made at it stays exact, and
+     * fine enough that the rounding is well under a millisecond of playing.
+     */
+    Fraction MsToNotated(double ms) const;
+
+    /** The performed time of the last onset the map holds, i.e. where its interpolation ends */
+    double GetLastOnsetMs() const { return m_knots.empty() ? 0.0 : m_knots.back().meanMs; }
 
     /**
      * The performed time at which the last note of the map stops sounding.
@@ -238,7 +249,7 @@ private:
     int CalcBarLineX(const Fraction &notatedTime, bool closesScore) const;
 
     /** Anchor the performed time of the system opened by the measure being visited */
-    void CalcSystemTimeOrigin(int leftBarLineXRel);
+    void CalcSystemTimeOrigin(const Measure *measure, int leftBarLineXRel);
 
     /** The event of the attack a note tied over is still sounding, NULL when there is none */
     const PerformedEvent *GetTieStartEvent(const std::string &xmlId) const;
@@ -267,8 +278,12 @@ private:
     bool m_isFirstMeasureInSystem = true;
     /** Whether the measure being visited is the one that closes the score */
     bool m_isLastMeasureInScore = false;
+    /** Where the barline closing the measure being visited stands when the clock cut it */
+    std::optional<int> m_measureEndX;
     /** The drawing X of the measure being visited */
     int m_measureX = 0;
+    /** How far the measure being visited is written to, which its barline gives way for */
+    int m_measureMaxX = 0;
     /** The extent of the current system, used to give it its width */
     int m_systemMaxX = 0;
 };

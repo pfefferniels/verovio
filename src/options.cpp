@@ -56,6 +56,9 @@ const std::map<int, std::string> Option::s_multiRestStyle = { { MULTIRESTSTYLE_a
 const std::map<int, std::string> Option::s_pedalStyle = { { PEDALSTYLE_NONE, "auto" }, { PEDALSTYLE_line, "line" },
     { PEDALSTYLE_pedstar, "pedstar" }, { PEDALSTYLE_altpedstar, "altpedstar" } };
 
+const std::map<int, std::string> Option::s_performanceBreaks
+    = { { PERFORMANCE_BREAKS_time, "time" }, { PERFORMANCE_BREAKS_measure, "measure" } };
+
 const std::map<int, std::string> Option::s_performanceUnmatched = { { PERFORMANCE_UNMATCHED_mark, "mark" },
     { PERFORMANCE_UNMATCHED_plain, "plain" }, { PERFORMANCE_UNMATCHED_hide, "hide" } };
 
@@ -1938,6 +1941,12 @@ Options::Options()
         "<performance> element of the MEI instead of from its notated duration");
     m_performanceAlignment.Init(false);
     this->Register(&m_performanceAlignment, "performanceAlignment", &m_performance);
+
+    m_performanceBreaks.SetInfo("Performance breaks",
+        "How the systems are divided: purely by the performed time, cutting within a measure where "
+        "needed, or at the barlines only");
+    m_performanceBreaks.Init(PERFORMANCE_BREAKS_time, &Option::s_performanceBreaks);
+    this->Register(&m_performanceBreaks, "performanceBreaks", &m_performance);
 
     m_performanceRecording.SetInfo("Performance recording",
         "The <recording> to lay out, given as a 1-based index or as its @xml:id or @source; "

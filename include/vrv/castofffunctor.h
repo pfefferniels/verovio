@@ -46,6 +46,13 @@ public:
     void SetSystemWidth(int width) { m_systemWidth = width; }
 
     /*
+     * Break the systems where the measures were cut by performed time, and nowhere else.
+     * The width of a measure is then the time it took, so a break decided by the width would put
+     * the systems out of step with the clock the measures were cut by.
+     */
+    void SetPerformanceBreaks(bool performanceBreaks) { m_performanceBreaks = performanceBreaks; }
+
+    /*
      * Functor interface
      */
     ///@{
@@ -86,6 +93,8 @@ private:
     ArrayOfObjects m_pendingElements;
     // Indicates to smartly use encoded system breaks
     bool m_smart;
+    // Indicates to break only where the measures were cut by performed time
+    bool m_performanceBreaks;
     // The leftover system (last system with only one measure)
     System *m_leftoverSystem;
 };

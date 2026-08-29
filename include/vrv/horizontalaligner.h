@@ -458,6 +458,14 @@ public:
     void SetMaxTime(const Fraction &time);
 
     /**
+     * Set the maximum time of the measure whether it is later or earlier than the content asked
+     * for, which SetMaxTime never makes it.
+     * This is for a measure cut by performed time: it is as long as the cut made it, and not as
+     * long as a note held across the cut goes on sounding.
+     */
+    void ForceMaxTime(const Fraction &time);
+
+    /**
      * Return the max time of the measure (i.e., the right measure alignment time)
      */
     Fraction GetMaxTime() const;

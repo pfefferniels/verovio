@@ -194,6 +194,23 @@ void MeasureAligner::SetMaxTime(const Fraction &time)
     }
 }
 
+void MeasureAligner::ForceMaxTime(const Fraction &time)
+{
+    // we have to have a m_rightBarLineAlignment
+    assert(m_rightBarLineAlignment);
+
+    // it must be found in the aligner
+    int idx = m_rightBarLineAlignment->GetIdx();
+    assert(idx != -1);
+
+    // Everything from the right barline on - the cautionary signatures are there too
+    for (int i = idx; i < this->GetAlignmentCount(); ++i) {
+        Alignment *alignment = vrv_cast<Alignment *>(this->GetChild(i));
+        assert(alignment);
+        alignment->SetTime(time);
+    }
+}
+
 Fraction MeasureAligner::GetMaxTime() const
 {
     // we have to have a m_rightBarLineAlignment

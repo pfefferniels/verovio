@@ -6,6 +6,10 @@
   `<recording>` in the MEI `<performance>` element, with per-note positions taken from the
   performance, systems broken by performed duration, velocity rendered as ink density, dashed
   barlines, a ruler in seconds, and `data-perf-*` attributes on the notes with `--svg-html5`
+* Performed-time layout: option `--performance-breaks` dividing the systems purely by the performed
+  time, so that every system covers the same span of the recording - cutting within a measure
+  wherever the clock falls, a beam it goes through being drawn across the break - with `measure` to
+  keep breaking at the barlines only
 * Fix MusicXML `circle-x` notehead mapping to SMuFL U+E0B3
 
 ## [6.3.0] – 2026-08-19

@@ -8,12 +8,17 @@
 #ifndef __VRV_MEASURE_H__
 #define __VRV_MEASURE_H__
 
+#include <optional>
+
+//----------------------------------------------------------------------------
+
 #include "atts_cmn.h"
 #include "atts_shared.h"
 #include "barline.h"
 #include "facsimileinterface.h"
 #include "horizontalaligner.h"
 #include "object.h"
+#include "performance.h"
 
 namespace vrv {
 
@@ -147,6 +152,20 @@ public:
      * Return the index position of the measure in its system parent
      */
     int GetMeasureIdx() const { return Object::GetIdx(); }
+
+    /**
+     * @name Set and get the performance segment, which a measure only has when the systems are
+     * cut by performed time and the cut fell within a measure. See PerformanceSegment.
+     */
+    ///@{
+    void SetPerformanceSegment(const PerformanceSegment &segment) { m_performanceSegment = segment; }
+    void ResetPerformanceSegment() { m_performanceSegment.reset(); }
+    const std::optional<PerformanceSegment> &GetPerformanceSegment() const { return m_performanceSegment; }
+    /** True when the measure continues one that was cut before it */
+    bool IsPerformanceContinuation() const { return (m_performanceSegment && m_performanceSegment->isContinuation); }
+    /** True when a system break falls on the left edge of the measure */
+    bool StartsPerformanceSystem() const { return (m_performanceSegment && m_performanceSegment->startsSystem); }
+    ///@}
 
     /**
      * @name Set and get the left and right barline types
@@ -426,6 +445,11 @@ private:
      * The unique measure index
      */
     int m_index;
+
+    /**
+     * Set when the measure is one part of a measure cut by performed time, see PerformanceSegment
+     */
+    std::optional<PerformanceSegment> m_performanceSegment;
 
     /**
      * @name The measure barlines (left and right) used when drawing

@@ -10,6 +10,7 @@
 //----------------------------------------------------------------------------
 
 #include <algorithm>
+#include <cmath>
 #include <iterator>
 #include <numeric>
 #include <ranges>
@@ -95,6 +96,35 @@ double PerformanceMap::NotatedToMs(const Fraction &notatedTime) const
     if (span <= 0.0) return low.meanMs;
 
     return low.meanMs + (time - low.notatedTime.ToDouble()) / span * (high->meanMs - low.meanMs);
+}
+
+Fraction PerformanceMap::MsToNotated(double ms) const
+{
+    // The map is read back on a grid of a thousandth of a whole note, which is a fraction of a
+    // millisecond of playing at any tempo. Keeping the denominator a power of two is what keeps
+    // the notated time of everything after a cut made here exact.
+    static constexpr int GRID = 1024;
+    const auto toFraction = [](double notated) { return Fraction(static_cast<int>(std::round(notated * GRID)), GRID); };
+
+    if (m_knots.empty()) return Fraction(0);
+
+    const PerformanceKnot &front = m_knots.front();
+    const PerformanceKnot &back = m_knots.back();
+    if (ms <= front.meanMs) return toFraction(front.notatedTime.ToDouble() - (front.meanMs - ms) / m_fallbackRate);
+    if (ms >= back.meanMs) return toFraction(back.notatedTime.ToDouble() + (ms - back.meanMs) / m_fallbackRate);
+
+    // The mean onsets are non decreasing, so the first knot reaching the time asked for closes
+    // the interval it falls in. Several knots can share an onset, and it is the first of them
+    // that the interval is read against.
+    const auto high = std::ranges::lower_bound(m_knots, ms, {}, &PerformanceKnot::meanMs);
+    const PerformanceKnot &low = *(high - 1);
+
+    const double span = high->meanMs - low.meanMs;
+    if (span <= 0.0) return low.notatedTime;
+
+    const double notatedSpan = high->notatedTime.ToDouble() - low.notatedTime.ToDouble();
+
+    return toFraction(low.notatedTime.ToDouble() + (ms - low.meanMs) / span * notatedSpan);
 }
 
 PerformanceWindow PerformanceMap::GetBarLineWindow(const Fraction &notatedTime) const
@@ -245,22 +275,40 @@ int CalcPerformanceXPosFunctor::CalcBarLineX(const Fraction &notatedTime, bool c
     return x;
 }
 
-void CalcPerformanceXPosFunctor::CalcSystemTimeOrigin(int leftBarLineXRel)
+void CalcPerformanceXPosFunctor::CalcSystemTimeOrigin(const Measure *measure, int leftBarLineXRel)
 {
     // Each system starts at its own performed time, so that the systems stack from the left edge
-    // whatever point of the recording they cover
-    m_systemOriginMs = m_map.NotatedToMs(m_measureTime);
+    // whatever point of the recording they cover. One cut by the clock opens at the moment it was
+    // cut at rather than at its first note, which is what makes every system cover the same span
+    // of the recording - what was still sounding at the cut simply goes on into the silence the
+    // system opens with.
+    const std::optional<PerformanceSegment> &segment = measure->GetPerformanceSegment();
+    const bool isCut = (segment && segment->startMs);
+
+    m_systemOriginMs = isCut ? *segment->startMs : m_map.NotatedToMs(m_measureTime);
     m_timeOriginX = m_systemX + leftBarLineXRel;
-    // The brace, the line opening the system and the labels are all drawn against the left edge
-    // of the system, so the first measure has to begin exactly there. Its left barline closes the
-    // gutter and is pinned to the end of it, which the whole system is shifted by - a barline
-    // stands ahead of the downbeat it announces, so without this the measure would reach back
-    // past the edge of the system.
-    m_timeOriginX += (m_systemX + leftBarLineXRel) - this->CalcBarLineX(m_measureTime, false);
+
+    if (isCut) {
+        // Nothing may be drawn into the gutter, and a note played before the beat it belongs to
+        // reaches back past the cut - the system gives way where it does
+        const PerformanceWindow window = m_map.GetBarLineWindow(m_measureTime);
+        if (window.after) {
+            const int earliest = this->MsToX(window.after->firstMs) + window.after->minXRel;
+            m_timeOriginX += std::max(0, m_systemX + leftBarLineXRel - earliest);
+        }
+    }
+    else {
+        // The brace, the line opening the system and the labels are all drawn against the left
+        // edge of the system, so the first measure has to begin exactly there. Its left barline
+        // closes the gutter and is pinned to the end of it, which the whole system is shifted by -
+        // a barline stands ahead of the downbeat it announces, so without this the measure would
+        // reach back past the edge of the system.
+        m_timeOriginX += (m_systemX + leftBarLineXRel) - this->CalcBarLineX(m_measureTime, false);
+    }
     if (!m_currentSystem) return;
 
-    // The time the ruler reads at the left edge of the content is the one that falls on the
-    // barline, which is a little before the first onset the system holds
+    // The time the ruler reads at the left edge of the content is the one the system was moved to
+    // open at - the moment of the cut, or a little before the first onset where it opens on a barline
     const double gutterMs = m_systemOriginMs - (m_timeOriginX - m_systemX - leftBarLineXRel) / m_unitsPerMs;
     m_currentSystem->SetPerformanceOrigin(gutterMs, leftBarLineXRel);
 }
@@ -308,12 +356,22 @@ FunctorCode CalcPerformanceXPosFunctor::VisitMeasure(Measure *measure)
     // Everything up to and including the left barline keeps the position that the ordinary
     // spacing gave it, so performed time starts only after that gutter.
     const int leftBarLineXRel = measure->GetLeftBarLineXRel();
-    if (m_isFirstMeasureInSystem) this->CalcSystemTimeOrigin(leftBarLineXRel);
+    if (m_isFirstMeasureInSystem) this->CalcSystemTimeOrigin(measure, leftBarLineXRel);
 
-    // The left barline of the measure goes between the last note before it and the first
-    // note of its downbeat
-    m_measureX = this->CalcBarLineX(m_measureTime, false) - leftBarLineXRel;
+    // A measure the clock cut open begins where its system does, with the gutter holding the clef
+    // and the signatures standing in front of the cut. Anywhere else the left barline goes between
+    // the last note before it and the first note of its downbeat.
+    const std::optional<PerformanceSegment> &segment = measure->GetPerformanceSegment();
+    const bool opensSystem = (m_isFirstMeasureInSystem && segment && segment->startMs);
+
+    m_measureX = opensSystem ? m_systemX : (this->CalcBarLineX(m_measureTime, false) - leftBarLineXRel);
     measure->SetDrawingXRel(m_measureX - m_systemX);
+    m_measureMaxX = m_measureX;
+
+    // Where the measure was cut, its right barline is drawn at the moment of the cut rather than
+    // at the music around it, so that the system ends where the next one begins
+    m_measureEndX.reset();
+    if (segment && segment->endMs) m_measureEndX = this->MsToX(*segment->endMs);
 
     // The aligners are not reached by the page traversal
     measure->m_measureAligner.Process(*this);
@@ -323,6 +381,18 @@ FunctorCode CalcPerformanceXPosFunctor::VisitMeasure(Measure *measure)
 
 FunctorCode CalcPerformanceXPosFunctor::VisitMeasureEnd(Measure *measure)
 {
+    // The barline closing a measure the clock cut stands a little past the moment of the cut, and
+    // past anything written after it: a notehead struck on the cut reaches over it, one played
+    // later than it reaches further, and the piece of beam running on to the next system further
+    // still. The margin is the same everywhere, so that the systems keep ending level.
+    if (m_measureEndX) {
+        const int x = std::max(*m_measureEndX, m_measureMaxX) + m_doc->GetDrawingUnit(100) * 3;
+        for (Object *child : measure->m_measureAligner.GetChildren()) {
+            Alignment *alignment = vrv_cast<Alignment *>(child);
+            if (alignment->GetType() >= ALIGNMENT_MEASURE_RIGHT_BARLINE) alignment->SetXRel(x - m_measureX);
+        }
+    }
+
     m_systemMaxX = std::max(m_systemMaxX, m_measureX + measure->GetWidth());
     m_measureTime = m_measureTime + measure->m_measureAligner.GetMaxTime();
     m_isFirstMeasureInSystem = false;
@@ -340,7 +410,7 @@ FunctorCode CalcPerformanceXPosFunctor::VisitAlignment(Alignment *alignment)
     // The closing barline is placed the same way as the opening one of the next measure, so that
     // the two meet and the staff lines run on without a gap
     const bool isBarLine = (alignment->GetType() >= ALIGNMENT_MEASURE_RIGHT_BARLINE);
-    const int x = isBarLine ? this->CalcBarLineX(notatedTime, m_isLastMeasureInScore)
+    const int x = isBarLine ? m_measureEndX.value_or(this->CalcBarLineX(notatedTime, m_isLastMeasureInScore))
                             : this->MsToX(m_map.NotatedToMs(notatedTime));
     alignment->SetXRel(x - m_measureX);
 
@@ -388,6 +458,10 @@ FunctorCode CalcPerformanceXPosFunctor::VisitLayerElement(LayerElement *layerEle
         }
         layerElement->m_perfEvent = interpolated;
     }
+
+    // How far the measure is written to, which is not where its notes sound: one displaced within
+    // its own alignment - a chord second, a note with an accidental - reaches past its own onset
+    m_measureMaxX = std::max(m_measureMaxX, layerElement->GetDrawingX() + layerElement->GetDrawingRadius(m_doc) * 2);
 
     return FUNCTOR_CONTINUE;
 }
