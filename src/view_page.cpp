@@ -1835,6 +1835,17 @@ void View::DrawMeasureChildren(DeviceContext *dc, Object *parent, Measure *measu
     assert(system);
 
     ListOfObjects objects = parent->FindAllDescendantsByType(BEAMSPAN, false);
+    // A beamSpan goes on into measures it is not encoded in, and the stems it holds together are
+    // drawn with the staff they are in - so the segment of the system has to be calculated for
+    // those measures too, and not only for the one the beamSpan itself sits in
+    for (const Object *child : parent->GetChildren()) {
+        if (!child->Is(STAFF)) continue;
+        const Staff *staff = vrv_cast<const Staff *>(child);
+        for (Object *spanning : staff->m_timeSpanningElements) {
+            if (spanning->Is(BEAMSPAN)) objects.push_back(spanning);
+        }
+    }
+
     for (Object *element : objects) {
         BeamSpan *beamSpan = vrv_cast<BeamSpan *>(element);
         BeamSpanSegment *segment = beamSpan->GetSegmentForSystem(system);
