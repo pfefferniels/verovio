@@ -29,6 +29,8 @@ class Tempo : public ControlElement,
               public TimeSpanningInterface,
               public AttExtender,
               public AttLang,
+              public AttLineRend,
+              public AttLineRendBase,
               public AttMidiTempo,
               public AttMmTempo {
 public:

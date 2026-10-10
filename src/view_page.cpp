@@ -232,6 +232,8 @@ void View::DrawSystem(DeviceContext *dc, System *system)
     this->DrawSystemList(dc, system, TEMPO);
     this->DrawSystemList(dc, system, TIE);
     this->DrawSystemList(dc, system, SLUR);
+    this->DrawSystemList(dc, system, LINE);
+    this->DrawSystemList(dc, system, CURVE);
     this->DrawSystemList(dc, system, ENDING);
 
     dc->EndGraphic(system, this);
@@ -310,8 +312,9 @@ void View::DrawSystemList(DeviceContext *dc, System *system, const ClassId class
     ArrayOfObjects *drawingList = system->GetDrawingList();
 
     for (Object *object : *drawingList) {
-        static const std::set<ClassId> timeSpanningClasses = { ANNOTSCORE, BEAMSPAN, BRACKETSPAN, DIR, DYNAM, FIGURE,
-            GLISS, HAIRPIN, LV, OCTAVE, ORNAM, PEDAL, PHRASE, PITCHINFLECTION, SLUR, SYL, TEMPO, TIE, TRILL };
+        static const std::set<ClassId> timeSpanningClasses
+            = { ANNOTSCORE, BEAMSPAN, BRACKETSPAN, CURVE, DIR, DYNAM, FIGURE, GLISS, HAIRPIN, LINE, LV, OCTAVE, ORNAM,
+                  PEDAL, PHRASE, PITCHINFLECTION, SLUR, SYL, TEMPO, TIE, TRILL };
         if (object->Is(classId) && timeSpanningClasses.contains(classId)) {
             this->StartOffset(dc, object, 100);
             this->DrawTimeSpanningElement(dc, object, system);

@@ -29,6 +29,7 @@ class Dir : public ControlElement,
             public TimeSpanningInterface,
             public AttExtender,
             public AttLang,
+            public AttLineRend,
             public AttLineRendBase,
             public AttVerticalGroup {
 public:

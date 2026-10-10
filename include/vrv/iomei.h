@@ -48,6 +48,7 @@ class ControlElement;
 class Corr;
 class Course;
 class CpMark;
+class Curve;
 class Custos;
 class Damage;
 class Del;
@@ -88,6 +89,7 @@ class LayerElement;
 class Lb;
 class Lem;
 class Ligature;
+class Line;
 class Liquescent;
 class Lv;
 class Mdiv;
@@ -458,6 +460,7 @@ private:
     void WriteBreath(pugi::xml_node currentNode, Breath *breath);
     void WriteCaesura(pugi::xml_node currentNode, Caesura *caesura);
     void WriteCpMark(pugi::xml_node currentNode, CpMark *cpMark);
+    void WriteCurve(pugi::xml_node currentNode, Curve *curve);
     void WriteDir(pugi::xml_node currentNode, Dir *dir);
     void WriteDynam(pugi::xml_node currentNode, Dynam *dynam);
     void WriteFermata(pugi::xml_node currentNode, Fermata *fermata);
@@ -465,6 +468,7 @@ private:
     void WriteGliss(pugi::xml_node currentNode, Gliss *gliss);
     void WriteHairpin(pugi::xml_node currentNode, Hairpin *hairpin);
     void WriteHarm(pugi::xml_node currentNode, Harm *harm);
+    void WriteLine(pugi::xml_node currentNode, Line *line);
     void WriteLv(pugi::xml_node currentNode, Lv *lv);
     void WriteMNum(pugi::xml_node currentNode, MNum *mnum);
     void WriteMordent(pugi::xml_node currentNode, Mordent *mordent);
@@ -819,6 +823,7 @@ private:
     bool ReadBreath(Object *parent, pugi::xml_node breath);
     bool ReadCaesura(Object *parent, pugi::xml_node caesura);
     bool ReadCpMark(Object *parent, pugi::xml_node cpMark);
+    bool ReadCurve(Object *parent, pugi::xml_node curve);
     bool ReadDir(Object *parent, pugi::xml_node dir, bool isStageDir = false);
     bool ReadDynam(Object *parent, pugi::xml_node dynam);
     bool ReadFermata(Object *parent, pugi::xml_node fermata);
@@ -826,6 +831,7 @@ private:
     bool ReadGliss(Object *parent, pugi::xml_node gliss);
     bool ReadHairpin(Object *parent, pugi::xml_node hairpin);
     bool ReadHarm(Object *parent, pugi::xml_node harm);
+    bool ReadLine(Object *parent, pugi::xml_node line);
     bool ReadLv(Object *parent, pugi::xml_node lv);
     bool ReadMNum(Object *parent, pugi::xml_node mnum);
     bool ReadMordent(Object *parent, pugi::xml_node mordent);

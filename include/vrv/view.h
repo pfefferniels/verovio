@@ -29,6 +29,7 @@ class Breath;
 class Caesura;
 class Chord;
 class ControlElement;
+class Curve;
 class DeviceContext;
 class Dir;
 class Div;
@@ -51,6 +52,7 @@ class KeyAccid;
 class Layer;
 class LayerElement;
 class Lb;
+class Line;
 class Liquescent;
 class Measure;
 class MNum;
@@ -469,12 +471,16 @@ protected:
         Object *graphic = NULL);
     void DrawBracketSpan(DeviceContext *dc, BracketSpan *bracketSpan, int x1, int x2, Staff *staff, char spanningType,
         Object *graphic = NULL);
+    void DrawCurve(
+        DeviceContext *dc, Curve *curve, int x1, int x2, Staff *staff, char spanningType, Object *graphic = NULL);
     void DrawFConnector(
         DeviceContext *dc, F *f, int x1, int x2, Staff *staff, char spanningType, Object *graphic = NULL);
     void DrawGliss(
         DeviceContext *dc, Gliss *gliss, int x1, int x2, Staff *staff, char spanningType, Object *graphic = NULL);
     void DrawHairpin(
         DeviceContext *dc, Hairpin *hairpin, int x1, int x2, Staff *staff, char spanningType, Object *graphic = NULL);
+    void DrawLine(
+        DeviceContext *dc, Line *line, int x1, int x2, Staff *staff, char spanningType, Object *graphic = NULL);
     void DrawOctave(
         DeviceContext *dc, Octave *octave, int x1, int x2, Staff *staff, char spanningType, Object *graphic = NULL);
     void DrawPedalLine(
@@ -584,9 +590,35 @@ protected:
         char32_t start = 0, char32_t end = 0);
     void DrawSmuflString(DeviceContext *dc, int x, int y, std::u32string s, data_HORIZONTALALIGNMENT alignment,
         int staffSize = 100, bool dimin = false, bool setBBGlyph = false);
+    /**
+     * Calculate the width of a line from an MEI @lwidth or @width value.
+     * Line width terms (narrow, medium, wide) are applied as a factor of the default width.
+     */
+    int GetLineWidth(const data_LINEWIDTH &lineWidth, int defaultWidth, int staffSize) const;
+    void DrawWavyLine(DeviceContext *dc, const Point &p1, const Point &p2, int lineWidth, int staffSize);
+    /**
+     * Draw a line start or end symbol (e.g., an arrow head) with its tip at the given point.
+     * The angle (in radians, logical coordinates) is the direction of the line when reaching the tip.
+     * The symbol size is the MEI @lendsym.size / @endsym.size value (0 for the default size).
+     */
+    void DrawLineEndSymbol(DeviceContext *dc, data_LINESTARTENDSYMBOL symbol, const Point &tip, double angle,
+        int lineWidth, int staffSize, int symbolSize = 0);
+    /**
+     * The length of the symbol along the line and how much the line has to be shortened for it.
+     */
+    ///@{
+    int GetLineEndSymbolLength(data_LINESTARTENDSYMBOL symbol, int staffSize, int symbolSize = 0) const;
+    int GetLineEndSymbolInset(data_LINESTARTENDSYMBOL symbol, int staffSize, int symbolSize = 0) const;
+    ///@}
     void DrawLyricString(DeviceContext *dc, const std::u32string &str, int staffSize = 100,
         std::optional<TextDrawingParams> params = std::nullopt);
     void DrawNotFilledEllipse(DeviceContext *dc, int x1, int y1, int x2, int y2, int lineThinkness);
+    /**
+     * Draw an enclosure (circle, box, brackets or parentheses) around the area from (x1, y1) to (x2, y2).
+     * Used for circling notes and chords.
+     */
+    void DrawEnclosure(
+        DeviceContext *dc, int x1, int y1, int x2, int y2, data_ENCLOSURE enclosure, int staffSize, bool cueSize);
     void DrawFilledRectangle(DeviceContext *dc, int x1, int y1, int x2, int y2);
     void DrawNotFilledRectangle(DeviceContext *dc, int x1, int y1, int x2, int y2, int lineThinkness, int radius);
     void DrawFilledRoundedRectangle(DeviceContext *dc, int x1, int y1, int x2, int y2, int radius);

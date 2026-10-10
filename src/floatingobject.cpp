@@ -20,6 +20,7 @@
 #include "breath.h"
 #include "caesura.h"
 #include "cpmark.h"
+#include "curve.h"
 #include "dir.h"
 #include "doc.h"
 #include "dynam.h"
@@ -28,6 +29,7 @@
 #include "functor.h"
 #include "hairpin.h"
 #include "harm.h"
+#include "line.h"
 #include "mordent.h"
 #include "octave.h"
 #include "ornam.h"
@@ -245,6 +247,12 @@ FloatingPositioner::FloatingPositioner(FloatingObject *object, StaffAlignment *a
         // cpMark above by default
         m_place = (cpMark->GetPlace() != STAFFREL_NONE) ? cpMark->GetPlace() : STAFFREL_above;
     }
+    else if (object->Is(CURVE)) {
+        Curve *curve = vrv_cast<Curve *>(object);
+        assert(curve);
+        // curve above by default
+        m_place = curve->IsBelow() ? STAFFREL_below : STAFFREL_above;
+    }
     else if (object->Is(DIR)) {
         Dir *dir = vrv_cast<Dir *>(object);
         assert(dir);
@@ -295,6 +303,12 @@ FloatingPositioner::FloatingPositioner(FloatingObject *object, StaffAlignment *a
         assert(mordent);
         // mordent above by default;
         m_place = (mordent->GetPlace() != STAFFREL_NONE) ? mordent->GetPlace() : mordent->GetLayerPlace(STAFFREL_above);
+    }
+    else if (object->Is(LINE)) {
+        Line *line = vrv_cast<Line *>(object);
+        assert(line);
+        // line above by default
+        m_place = (line->GetPlace() != STAFFREL_NONE) ? line->GetPlace() : STAFFREL_above;
     }
     else if (object->Is(OCTAVE)) {
         Octave *octave = vrv_cast<Octave *>(object);

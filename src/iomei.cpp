@@ -39,6 +39,7 @@
 #include "corr.h"
 #include "course.h"
 #include "cpmark.h"
+#include "curve.h"
 #include "custos.h"
 #include "damage.h"
 #include "del.h"
@@ -79,6 +80,7 @@
 #include "lb.h"
 #include "lem.h"
 #include "ligature.h"
+#include "line.h"
 #include "liquescent.h"
 #include "lv.h"
 #include "lyricelement.h"
@@ -562,6 +564,10 @@ bool MEIOutput::WriteObjectInternal(Object *object, bool useCustomScoreDef)
         m_currentNode = m_currentNode.append_child("cpMark");
         this->WriteCpMark(m_currentNode, vrv_cast<CpMark *>(object));
     }
+    else if (object->Is(CURVE)) {
+        m_currentNode = m_currentNode.append_child("curve");
+        this->WriteCurve(m_currentNode, vrv_cast<Curve *>(object));
+    }
     else if (object->Is(DIR)) {
         Dir *dir = vrv_cast<Dir *>(object);
         assert(dir);
@@ -598,6 +604,10 @@ bool MEIOutput::WriteObjectInternal(Object *object, bool useCustomScoreDef)
     else if (object->Is(HARM)) {
         m_currentNode = m_currentNode.append_child("harm");
         this->WriteHarm(m_currentNode, vrv_cast<Harm *>(object));
+    }
+    else if (object->Is(LINE)) {
+        m_currentNode = m_currentNode.append_child("line");
+        this->WriteLine(m_currentNode, vrv_cast<Line *>(object));
     }
     else if (object->Is(LV)) {
         m_currentNode = m_currentNode.append_child("lv");
@@ -2138,6 +2148,19 @@ void MEIOutput::WriteCpMark(pugi::xml_node currentNode, CpMark *cpMark)
     this->WriteTimeSpanningInterface(currentNode, cpMark);
 }
 
+void MEIOutput::WriteCurve(pugi::xml_node currentNode, Curve *curve)
+{
+    assert(curve);
+
+    this->WriteControlElement(currentNode, curve);
+    this->WriteOffsetSpanningInterface(currentNode, curve);
+    this->WriteTimeSpanningInterface(currentNode, curve);
+    curve->WriteCurvature(currentNode);
+    curve->WriteCurveLog(currentNode);
+    curve->WriteLineRend(currentNode);
+    curve->WriteLineRendBase(currentNode);
+}
+
 void MEIOutput::WriteDir(pugi::xml_node currentNode, Dir *dir)
 {
     assert(dir);
@@ -2146,6 +2169,7 @@ void MEIOutput::WriteDir(pugi::xml_node currentNode, Dir *dir)
     this->WriteTextDirInterface(currentNode, dir);
     this->WriteTimeSpanningInterface(currentNode, dir);
     dir->WriteLang(currentNode);
+    dir->WriteLineRend(currentNode);
     dir->WriteLineRendBase(currentNode);
     dir->WriteExtender(currentNode);
     dir->WriteVerticalGroup(currentNode);
@@ -2160,6 +2184,7 @@ void MEIOutput::WriteDynam(pugi::xml_node currentNode, Dynam *dynam)
     this->WriteTimeSpanningInterface(currentNode, dynam);
     dynam->WriteEnclosingChars(currentNode);
     dynam->WriteExtender(currentNode);
+    dynam->WriteLineRend(currentNode);
     dynam->WriteLineRendBase(currentNode);
     dynam->WriteMidiValue(currentNode);
     dynam->WriteMidiValue2(currentNode);
@@ -2223,6 +2248,18 @@ void MEIOutput::WriteHarm(pugi::xml_node currentNode, Harm *harm)
     this->WriteTimeSpanningInterface(currentNode, harm);
     harm->WriteLang(currentNode);
     harm->WriteNNumberLike(currentNode);
+}
+
+void MEIOutput::WriteLine(pugi::xml_node currentNode, Line *line)
+{
+    assert(line);
+
+    this->WriteControlElement(currentNode, line);
+    this->WriteOffsetSpanningInterface(currentNode, line);
+    this->WriteTimeSpanningInterface(currentNode, line);
+    line->WriteLineLog(currentNode);
+    line->WriteLineVis(currentNode);
+    line->WritePlacementRelStaff(currentNode);
 }
 
 void MEIOutput::WriteLv(pugi::xml_node currentNode, Lv *lv)
@@ -2390,6 +2427,8 @@ void MEIOutput::WriteTempo(pugi::xml_node currentNode, Tempo *tempo)
     this->WriteTimeSpanningInterface(currentNode, tempo);
     tempo->WriteExtender(currentNode);
     tempo->WriteLang(currentNode);
+    tempo->WriteLineRend(currentNode);
+    tempo->WriteLineRendBase(currentNode);
     tempo->WriteMidiTempo(currentNode);
     tempo->WriteMmTempo(currentNode);
 }
@@ -2562,6 +2601,7 @@ void MEIOutput::WriteChord(pugi::xml_node currentNode, Chord *chord)
     chord->WriteChordVis(currentNode);
     chord->WriteColor(currentNode);
     chord->WriteCue(currentNode);
+    chord->WriteEnclosingChars(currentNode);
     chord->WriteGraced(currentNode);
     chord->WriteStems(currentNode);
     chord->WriteStemsCmn(currentNode);
@@ -2922,6 +2962,7 @@ void MEIOutput::WriteNote(pugi::xml_node currentNode, Note *note)
     note->WriteColor(currentNode);
     note->WriteColoration(currentNode);
     note->WriteCue(currentNode);
+    note->WriteEnclosingChars(currentNode);
     note->WriteExtSymAuth(currentNode);
     note->WriteExtSymNames(currentNode);
     note->WriteGraced(currentNode);
@@ -5905,6 +5946,9 @@ bool MEIInput::ReadMeasureChildren(Object *parent, pugi::xml_node parentNode)
         else if (currentName == "cpMark") {
             success = this->ReadCpMark(parent, current);
         }
+        else if (currentName == "curve") {
+            success = this->ReadCurve(parent, current);
+        }
         else if (currentName == "dir") {
             success = this->ReadDir(parent, current);
         }
@@ -5925,6 +5969,9 @@ bool MEIInput::ReadMeasureChildren(Object *parent, pugi::xml_node parentNode)
         }
         else if (currentName == "harm") {
             success = this->ReadHarm(parent, current);
+        }
+        else if (currentName == "line") {
+            success = this->ReadLine(parent, current);
         }
         else if (currentName == "lv") {
             success = this->ReadLv(parent, current);
@@ -6188,6 +6235,23 @@ bool MEIInput::ReadCpMark(Object *parent, pugi::xml_node cpMark)
     return this->ReadTextChildren(vrvCpMark, cpMark, vrvCpMark);
 }
 
+bool MEIInput::ReadCurve(Object *parent, pugi::xml_node curve)
+{
+    Curve *vrvCurve = new Curve();
+    this->ReadControlElement(curve, vrvCurve);
+
+    this->ReadOffsetSpanningInterface(curve, vrvCurve);
+    this->ReadTimeSpanningInterface(curve, vrvCurve);
+    vrvCurve->ReadCurvature(curve);
+    vrvCurve->ReadCurveLog(curve);
+    vrvCurve->ReadLineRend(curve);
+    vrvCurve->ReadLineRendBase(curve);
+
+    parent->AddChild(vrvCurve);
+    this->ReadUnsupportedAttr(curve, vrvCurve);
+    return true;
+}
+
 bool MEIInput::ReadDir(Object *parent, pugi::xml_node dir, bool isStageDir)
 {
     Dir *vrvDir = new Dir(isStageDir);
@@ -6196,6 +6260,7 @@ bool MEIInput::ReadDir(Object *parent, pugi::xml_node dir, bool isStageDir)
     this->ReadTextDirInterface(dir, vrvDir);
     this->ReadTimeSpanningInterface(dir, vrvDir);
     vrvDir->ReadLang(dir);
+    vrvDir->ReadLineRend(dir);
     vrvDir->ReadLineRendBase(dir);
     vrvDir->ReadExtender(dir);
     vrvDir->ReadVerticalGroup(dir);
@@ -6214,6 +6279,7 @@ bool MEIInput::ReadDynam(Object *parent, pugi::xml_node dynam)
     this->ReadTimeSpanningInterface(dynam, vrvDynam);
     vrvDynam->ReadEnclosingChars(dynam);
     vrvDynam->ReadExtender(dynam);
+    vrvDynam->ReadLineRend(dynam);
     vrvDynam->ReadLineRendBase(dynam);
     vrvDynam->ReadMidiValue(dynam);
     vrvDynam->ReadMidiValue2(dynam);
@@ -6301,6 +6367,22 @@ bool MEIInput::ReadHarm(Object *parent, pugi::xml_node harm)
     parent->AddChild(vrvHarm);
     this->ReadUnsupportedAttr(harm, vrvHarm);
     return this->ReadTextChildren(vrvHarm, harm, vrvHarm);
+}
+
+bool MEIInput::ReadLine(Object *parent, pugi::xml_node line)
+{
+    Line *vrvLine = new Line();
+    this->ReadControlElement(line, vrvLine);
+
+    this->ReadOffsetSpanningInterface(line, vrvLine);
+    this->ReadTimeSpanningInterface(line, vrvLine);
+    vrvLine->ReadLineLog(line);
+    vrvLine->ReadLineVis(line);
+    vrvLine->ReadPlacementRelStaff(line);
+
+    parent->AddChild(vrvLine);
+    this->ReadUnsupportedAttr(line, vrvLine);
+    return true;
 }
 
 bool MEIInput::ReadLv(Object *parent, pugi::xml_node lv)
@@ -6495,6 +6577,8 @@ bool MEIInput::ReadTempo(Object *parent, pugi::xml_node tempo)
     this->ReadTimeSpanningInterface(tempo, vrvTempo);
     vrvTempo->ReadExtender(tempo);
     vrvTempo->ReadLang(tempo);
+    vrvTempo->ReadLineRend(tempo);
+    vrvTempo->ReadLineRendBase(tempo);
     vrvTempo->ReadMidiTempo(tempo);
     vrvTempo->ReadMmTempo(tempo);
 
@@ -7033,6 +7117,7 @@ bool MEIInput::ReadChord(Object *parent, pugi::xml_node chord)
     vrvChord->ReadChordVis(chord);
     vrvChord->ReadColor(chord);
     vrvChord->ReadCue(chord);
+    vrvChord->ReadEnclosingChars(chord);
     vrvChord->ReadGraced(chord);
     vrvChord->ReadStems(chord);
     vrvChord->ReadStemsCmn(chord);
@@ -7490,6 +7575,7 @@ bool MEIInput::ReadNote(Object *parent, pugi::xml_node note)
     vrvNote->ReadColor(note);
     vrvNote->ReadColoration(note);
     vrvNote->ReadCue(note);
+    vrvNote->ReadEnclosingChars(note);
     vrvNote->ReadExtSymAuth(note);
     vrvNote->ReadExtSymNames(note);
     vrvNote->ReadGraced(note);

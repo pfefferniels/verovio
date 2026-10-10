@@ -80,6 +80,21 @@ FunctorCode AdjustFloatingPositionersFunctor::VisitStaffAlignment(StaffAlignment
         // Skip if no content bounding box is available
         if (!positioner->HasContentBB()) continue;
 
+        // curves are drawn where their start and end are, only add them to the overflow boxes if required
+        if (m_classId == CURVE) {
+            const int overflowAbove = staffAlignment->CalcOverflowAbove(positioner);
+            if (overflowAbove > m_doc->GetDrawingStaffLineWidth(staffSize) / 2) {
+                staffAlignment->SetOverflowAbove(overflowAbove);
+                staffAlignment->AddBBoxAbove(positioner);
+            }
+            const int overflowBelow = staffAlignment->CalcOverflowBelow(positioner);
+            if (overflowBelow > m_doc->GetDrawingStaffLineWidth(staffSize) / 2) {
+                staffAlignment->SetOverflowBelow(overflowBelow);
+                staffAlignment->AddBBoxBelow(positioner);
+            }
+            continue;
+        }
+
         // for slurs and ties we do not need to adjust them, only add them to the overflow boxes if required
         if ((m_classId == LV) || (m_classId == PHRASE) || (m_classId == SLUR) || (m_classId == TIE)) {
 
@@ -181,6 +196,9 @@ FunctorCode AdjustFloatingPositionersFunctor::VisitSystem(System *system)
     m_classId = PHRASE;
     system->m_systemAligner.Process(*this);
 
+    m_classId = CURVE;
+    system->m_systemAligner.Process(*this);
+
     m_classId = ACCID_FLOATING;
     system->m_systemAligner.Process(*this);
 
@@ -212,6 +230,9 @@ FunctorCode AdjustFloatingPositionersFunctor::VisitSystem(System *system)
     system->m_systemAligner.Process(adjustFloatingPositionerGrps);
 
     m_classId = BRACKETSPAN;
+    system->m_systemAligner.Process(*this);
+
+    m_classId = LINE;
     system->m_systemAligner.Process(*this);
 
     m_classId = OCTAVE;

@@ -10,6 +10,7 @@
 //----------------------------------------------------------------------------
 
 #include <cassert>
+#include <cmath>
 #include <sstream>
 
 //----------------------------------------------------------------------------
@@ -329,6 +330,222 @@ void View::DrawSmuflLine(
     dc->DrawMusicText(str, this->ToDeviceContextX(orig.x), this->ToDeviceContextY(orig.y), false);
 
     dc->ResetFont();
+}
+
+void View::DrawEnclosure(
+    DeviceContext *dc, int x1, int y1, int x2, int y2, data_ENCLOSURE enclosure, int staffSize, bool cueSize)
+{
+    assert(dc);
+
+    int unit = m_doc->GetDrawingUnit(staffSize);
+    if (cueSize) unit = m_doc->GetCueSize(unit);
+    const int lineWidth = m_options->m_textEnclosureThickness.GetValue() * unit;
+    const int margin = unit / 3;
+    const int height = y2 - y1;
+
+    switch (enclosure) {
+        case ENCLOSURE_circle: {
+            // The ellipse going through the corners of the enclosed area, with the same proportions
+            const int cx = (x1 + x2) / 2;
+            const int cy = (y1 + y2) / 2;
+            const int rx = (x2 - x1) / 2 * std::sqrt(2.0) + margin;
+            const int ry = (y2 - y1) / 2 * std::sqrt(2.0) + margin;
+            this->DrawNotFilledEllipse(dc, cx - rx, cy - ry, cx + rx, cy + ry, lineWidth);
+            break;
+        }
+        case ENCLOSURE_box: {
+            this->DrawNotFilledRectangle(dc, x1 - margin, y1 - margin, x2 + margin, y2 + margin, lineWidth, 0);
+            break;
+        }
+        case ENCLOSURE_brack: {
+            const int hook = unit / 2;
+            const int left = x1 - 2 * margin;
+            const int right = x2 + 2 * margin;
+            const int bottom = y1 - margin;
+            const int top = y2 + margin;
+            Point leftBracket[4]
+                = { this->ToDeviceContext(Point(left + hook, top)), this->ToDeviceContext(Point(left, top)),
+                      this->ToDeviceContext(Point(left, bottom)), this->ToDeviceContext(Point(left + hook, bottom)) };
+            Point rightBracket[4]
+                = { this->ToDeviceContext(Point(right - hook, top)), this->ToDeviceContext(Point(right, top)),
+                      this->ToDeviceContext(Point(right, bottom)), this->ToDeviceContext(Point(right - hook, bottom)) };
+            dc->SetPen(lineWidth * 3 / 2, PEN_SOLID, 0, 0, LINECAP_BUTT, LINEJOIN_MITER);
+            dc->DrawPolyline(4, leftBracket);
+            dc->DrawPolyline(4, rightBracket);
+            dc->ResetPen();
+            break;
+        }
+        case ENCLOSURE_paren: {
+            const int bow = std::max(unit / 2, height / 8);
+            const int left = x1 - margin;
+            const int right = x2 + margin;
+            const int bottom = y1 - margin;
+            const int top = y2 + margin;
+            Point leftParen[4] = { this->ToDeviceContext(Point(left, top)),
+                this->ToDeviceContext(Point(left - bow, top - (top - bottom) / 4)),
+                this->ToDeviceContext(Point(left - bow, bottom + (top - bottom) / 4)),
+                this->ToDeviceContext(Point(left, bottom)) };
+            Point rightParen[4] = { this->ToDeviceContext(Point(right, top)),
+                this->ToDeviceContext(Point(right + bow, top - (top - bottom) / 4)),
+                this->ToDeviceContext(Point(right + bow, bottom + (top - bottom) / 4)),
+                this->ToDeviceContext(Point(right, bottom)) };
+            dc->SetPen(lineWidth * 3 / 2, PEN_SOLID, 0, 0, LINECAP_ROUND);
+            dc->SetBrush(0.0);
+            dc->DrawCubicBezierPath(leftParen);
+            dc->DrawCubicBezierPath(rightParen);
+            dc->ResetBrush();
+            dc->ResetPen();
+            break;
+        }
+        default: break;
+    }
+}
+
+int View::GetLineWidth(const data_LINEWIDTH &lineWidth, int defaultWidth, int staffSize) const
+{
+    if (lineWidth.GetType() == LINEWIDTHTYPE_lineWidthTerm) {
+        switch (lineWidth.GetLineWithTerm()) {
+            case LINEWIDTHTERM_narrow: return defaultWidth * LINEWIDTHTERM_factor_narrow;
+            case LINEWIDTHTERM_medium: return defaultWidth * LINEWIDTHTERM_factor_medium;
+            case LINEWIDTHTERM_wide: return defaultWidth * LINEWIDTHTERM_factor_wide;
+            default: break;
+        }
+    }
+    else if (lineWidth.GetType() == LINEWIDTHTYPE_measurementunsigned) {
+        if (lineWidth.GetMeasurementunsigned().GetType() == MEASUREMENTTYPE_px) {
+            return lineWidth.GetMeasurementunsigned().GetPx();
+        }
+        else {
+            return lineWidth.GetMeasurementunsigned().GetVu() * m_doc->GetDrawingUnit(staffSize);
+        }
+    }
+    return defaultWidth;
+}
+
+void View::DrawWavyLine(DeviceContext *dc, const Point &p1, const Point &p2, int lineWidth, int staffSize)
+{
+    assert(dc);
+
+    const double length = hypot(p2.x - p1.x, p2.y - p1.y);
+    if (length <= 0) return;
+
+    const int unit = m_doc->GetDrawingUnit(staffSize);
+    const double amplitude = 0.6 * unit;
+    // Use a whole number of half waves so that the line ends on its axis
+    const int halfWaves = std::max(1, (int)std::round(length / (1.5 * unit)));
+    const double halfWave = length / halfWaves;
+    // Unit vectors along and perpendicular to the line
+    const double dx = (p2.x - p1.x) / length;
+    const double dy = (p2.y - p1.y) / length;
+
+    constexpr int samplesPerHalfWave = 8;
+    const int count = halfWaves * samplesPerHalfWave + 1;
+    std::vector<Point> points(count);
+    for (int i = 0; i < count; ++i) {
+        const double t = (double)i / samplesPerHalfWave;
+        const double along = t * halfWave;
+        const double across = amplitude * sin(M_PI * t);
+        points.at(i) = Point(this->ToDeviceContextX(p1.x + along * dx - across * dy),
+            this->ToDeviceContextY(p1.y + along * dy + across * dx));
+    }
+
+    dc->SetPen(lineWidth, PEN_SOLID, 0, 0, LINECAP_ROUND, LINEJOIN_ROUND);
+    dc->DrawPolyline(count, points.data());
+    dc->ResetPen();
+}
+
+int View::GetLineEndSymbolLength(data_LINESTARTENDSYMBOL symbol, int staffSize, int symbolSize) const
+{
+    switch (symbol) {
+        case LINESTARTENDSYMBOL_arrow:
+        case LINESTARTENDSYMBOL_arrowopen:
+        case LINESTARTENDSYMBOL_arrowwhite:
+        case LINESTARTENDSYMBOL_harpoonleft:
+        case LINESTARTENDSYMBOL_harpoonright: {
+            // @lendsym.size (or @endsym.size) ranges from 1 to 9, 5 being the default size
+            const double sizeFactor = (symbolSize > 0) ? (0.5 + 0.1 * symbolSize) : 1.0;
+            return 2.2 * sizeFactor * m_doc->GetDrawingUnit(staffSize);
+        }
+        default: return 0;
+    }
+}
+
+int View::GetLineEndSymbolInset(data_LINESTARTENDSYMBOL symbol, int staffSize, int symbolSize) const
+{
+    switch (symbol) {
+        // The line ends within the head so its end does not show through the tip
+        case LINESTARTENDSYMBOL_arrow: return this->GetLineEndSymbolLength(symbol, staffSize, symbolSize) * 2 / 3;
+        case LINESTARTENDSYMBOL_arrowwhite: return this->GetLineEndSymbolLength(symbol, staffSize, symbolSize);
+        default: return 0;
+    }
+}
+
+void View::DrawLineEndSymbol(DeviceContext *dc, data_LINESTARTENDSYMBOL symbol, const Point &tip, double angle,
+    int lineWidth, int staffSize, int symbolSize)
+{
+    assert(dc);
+
+    const int unit = m_doc->GetDrawingUnit(staffSize);
+    const double length = this->GetLineEndSymbolLength(symbol, staffSize, symbolSize);
+    const double halfWidth = length * 0.4;
+    // Unit vector pointing backwards from the tip along the line and its perpendicular (to the left)
+    const double bx = -cos(angle);
+    const double by = -sin(angle);
+    const double nx = -by;
+    const double ny = bx;
+
+    auto toDC = [this, &tip, bx, by, nx, ny](double back, double side) {
+        return Point(this->ToDeviceContextX(tip.x + back * bx + side * nx),
+            this->ToDeviceContextY(tip.y + back * by + side * ny));
+    };
+
+    switch (symbol) {
+        case LINESTARTENDSYMBOL_arrow: {
+            Point points[4] = { toDC(0, 0), toDC(length, halfWidth), toDC(length * 0.75, 0), toDC(length, -halfWidth) };
+            dc->SetPen(lineWidth, PEN_SOLID, 0, 0, LINECAP_ROUND, LINEJOIN_MITER);
+            dc->DrawPolygon(4, points);
+            dc->ResetPen();
+            break;
+        }
+        case LINESTARTENDSYMBOL_arrowwhite: {
+            Point points[3] = { toDC(0, 0), toDC(length, halfWidth), toDC(length, -halfWidth) };
+            dc->SetPen(lineWidth, PEN_SOLID, 0, 0, LINECAP_ROUND, LINEJOIN_MITER);
+            dc->DrawPolyline(3, points, true);
+            dc->ResetPen();
+            break;
+        }
+        case LINESTARTENDSYMBOL_arrowopen: {
+            Point points[3] = { toDC(length, halfWidth), toDC(0, 0), toDC(length, -halfWidth) };
+            dc->SetPen(lineWidth, PEN_SOLID, 0, 0, LINECAP_ROUND, LINEJOIN_ROUND);
+            dc->DrawPolyline(3, points);
+            dc->ResetPen();
+            break;
+        }
+        case LINESTARTENDSYMBOL_harpoonleft:
+        case LINESTARTENDSYMBOL_harpoonright: {
+            // The barb is on the left or right side when looking at the tip
+            const double side = (symbol == LINESTARTENDSYMBOL_harpoonleft) ? halfWidth : -halfWidth;
+            Point points[2] = { toDC(0, 0), toDC(length, side) };
+            dc->SetPen(lineWidth, PEN_SOLID, 0, 0, LINECAP_ROUND);
+            dc->DrawLine(points[0].x, points[0].y, points[1].x, points[1].y);
+            dc->ResetPen();
+            break;
+        }
+        case LINESTARTENDSYMBOL_angledown:
+        case LINESTARTENDSYMBOL_angleleft:
+        case LINESTARTENDSYMBOL_angleup:
+        case LINESTARTENDSYMBOL_angleright: {
+            // A vertical hook on the page, independently from the direction of the line
+            const bool down = (symbol == LINESTARTENDSYMBOL_angledown) || (symbol == LINESTARTENDSYMBOL_angleleft);
+            const int hookY = tip.y + (down ? -2 : 2) * unit;
+            dc->SetPen(lineWidth, PEN_SOLID, 0, 0, LINECAP_SQUARE);
+            dc->DrawLine(this->ToDeviceContextX(tip.x), this->ToDeviceContextY(tip.y), this->ToDeviceContextX(tip.x),
+                this->ToDeviceContextY(hookY));
+            dc->ResetPen();
+            break;
+        }
+        default: break;
+    }
 }
 
 void View::DrawSmuflString(DeviceContext *dc, int x, int y, std::u32string s, data_HORIZONTALALIGNMENT alignment,

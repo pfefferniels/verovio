@@ -349,8 +349,8 @@ void System::AddToDrawingListIfNecessary(Object *object)
 
     if (!object->HasInterface(INTERFACE_TIME_SPANNING)) return;
 
-    if (object->IsAnyOf(std::array{ ANNOTSCORE, BEAMSPAN, BRACKETSPAN, FIGURE, GLISS, HAIRPIN, LV, OCTAVE, PHRASE,
-            PITCHINFLECTION, SLUR, SYL, TIE })) {
+    if (object->IsAnyOf(std::array{ ANNOTSCORE, BEAMSPAN, BRACKETSPAN, CURVE, FIGURE, GLISS, HAIRPIN, LINE, LV, OCTAVE,
+            PHRASE, PITCHINFLECTION, SLUR, SYL, TIE })) {
         this->AddToDrawingList(object);
     }
     else if (object->Is(DIR)) {

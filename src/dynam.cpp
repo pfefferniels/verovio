@@ -42,6 +42,7 @@ Dynam::Dynam()
     , TimeSpanningInterface()
     , AttEnclosingChars()
     , AttExtender()
+    , AttLineRend()
     , AttLineRendBase()
     , AttMidiValue()
     , AttMidiValue2()
@@ -51,6 +52,7 @@ Dynam::Dynam()
     this->RegisterInterface(TimeSpanningInterface::GetAttClasses(), TimeSpanningInterface::IsInterface());
     this->RegisterAttClass(ATT_ENCLOSINGCHARS);
     this->RegisterAttClass(ATT_EXTENDER);
+    this->RegisterAttClass(ATT_LINEREND);
     this->RegisterAttClass(ATT_LINERENDBASE);
     this->RegisterAttClass(ATT_MIDIVALUE);
     this->RegisterAttClass(ATT_MIDIVALUE2);
@@ -68,6 +70,7 @@ void Dynam::Reset()
     TimeSpanningInterface::Reset();
     this->ResetEnclosingChars();
     this->ResetExtender();
+    this->ResetLineRend();
     this->ResetLineRendBase();
     this->ResetVerticalGroup();
 }

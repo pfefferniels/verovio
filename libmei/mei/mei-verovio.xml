@@ -23,6 +23,9 @@
 			</sourceDesc>
 		</fileDesc>
 		<revisionDesc>
+			<change n="7" when="2026-10-10">
+				<desc xml:lang="en">Added att.lineRend to att.curve.vis for curved arrows and circle to data.ENCLOSURE for circled notes and chords.</desc>
+			</change>
 			<change n="6" when="2025-03-01">
 				<desc xml:lang="en">Replaced MEI.frettab with MEI.stringtab for MEI 5.1 tablature</desc>
 			</change>
@@ -567,6 +570,42 @@
 					</classes>
 					</classSpec>-->
 
+
+				<!-- ****************************************************************** -->
+				<!-- Annotations by performers (arrows, circles) -->
+				<!-- ****************************************************************** -->
+
+				<!-- Allow symbols (e.g., arrow heads) at the start and end of curves -->
+				<classSpec ident="att.curve.vis" module="MEI.visual" type="atts" mode="change">
+					<classes mode="change">
+						<memberOf key="att.lineRend" mode="add"/>
+					</classes>
+				</classSpec>
+
+				<!-- Allow notes and chords (and other elements with @enclose) to be circled -->
+				<macroSpec ident="data.ENCLOSURE" module="MEI" type="dt" mode="replace">
+					<desc xml:lang="en">Enclosures for editorial notes, accidentals, articulations, etc.</desc>
+					<content>
+						<valList type="closed">
+							<valItem ident="paren">
+								<desc xml:lang="en">Parentheses: ( and ).</desc>
+							</valItem>
+							<valItem ident="brack">
+								<desc xml:lang="en">Square brackets: [ and ].</desc>
+							</valItem>
+							<valItem ident="box">
+								<desc xml:lang="en">Box.</desc>
+							</valItem>
+							<!-- Verovio specific value -->
+							<valItem ident="circle">
+								<desc xml:lang="en">Circle.</desc>
+							</valItem>
+							<valItem ident="none">
+								<desc xml:lang="en">None.</desc>
+							</valItem>
+						</valList>
+					</content>
+				</macroSpec>
 
 				<!-- todos down here -->
 

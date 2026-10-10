@@ -1317,6 +1317,7 @@ std::string AttConverterBase::EnclosureToStr(data_ENCLOSURE data) const
         case ENCLOSURE_paren: value = "paren"; break;
         case ENCLOSURE_brack: value = "brack"; break;
         case ENCLOSURE_box: value = "box"; break;
+        case ENCLOSURE_circle: value = "circle"; break;
         case ENCLOSURE_none: value = "none"; break;
         default:
             LogWarning("Unknown value '%d' for data.ENCLOSURE", data);
@@ -1331,6 +1332,7 @@ data_ENCLOSURE AttConverterBase::StrToEnclosure(const std::string &value, bool l
     if (value == "paren") return ENCLOSURE_paren;
     if (value == "brack") return ENCLOSURE_brack;
     if (value == "box") return ENCLOSURE_box;
+    if (value == "circle") return ENCLOSURE_circle;
     if (value == "none") return ENCLOSURE_none;
     if (logWarning && !value.empty())
         LogWarning("Unsupported value '%s' for data.ENCLOSURE", value.c_str());

@@ -24,6 +24,7 @@
 #include "clef.h"
 #include "comparison.h"
 #include "cpmark.h"
+#include "curve.h"
 #include "devicecontext.h"
 #include "dir.h"
 #include "doc.h"
@@ -37,6 +38,7 @@
 #include "hairpin.h"
 #include "harm.h"
 #include "layer.h"
+#include "line.h"
 #include "measure.h"
 #include "mordent.h"
 #include "note.h"
@@ -79,8 +81,8 @@ void View::DrawControlElement(DeviceContext *dc, ControlElement *element, Measur
     this->StartOffset(dc, element, 100);
 
     // For dir, dynam, fermata, and harm, we do not consider the @tstamp2 for rendering
-    if (element->IsAnyOf(std::array{ ANNOTSCORE, BEAMSPAN, BRACKETSPAN, FIGURE, GLISS, HAIRPIN, LV, OCTAVE, PHRASE,
-            PITCHINFLECTION, SLUR, TIE })) {
+    if (element->IsAnyOf(std::array{ ANNOTSCORE, BEAMSPAN, BRACKETSPAN, CURVE, FIGURE, GLISS, HAIRPIN, LINE, LV, OCTAVE,
+            PHRASE, PITCHINFLECTION, SLUR, TIE })) {
         // create placeholder
         dc->StartGraphic(element, "", element->GetID());
         dc->EndGraphic(element, this);
@@ -190,7 +192,8 @@ void View::DrawTimeSpanningElement(DeviceContext *dc, Object *element, System *s
         BBoxDeviceContext *bBoxDC = vrv_cast<BBoxDeviceContext *>(dc);
         assert(bBoxDC);
         if (!bBoxDC->UpdateVerticalValues()) {
-            if (element->IsAnyOf(std::array{ ANNOTSCORE, BRACKETSPAN, HAIRPIN, OCTAVE, PITCHINFLECTION })) return;
+            if (element->IsAnyOf(std::array{ ANNOTSCORE, BRACKETSPAN, CURVE, HAIRPIN, LINE, OCTAVE, PITCHINFLECTION }))
+                return;
         }
     }
 
@@ -344,6 +347,12 @@ void View::DrawTimeSpanningElement(DeviceContext *dc, Object *element, System *s
             // cast to AnnotScore check in DrawAnnotScore
             this->DrawAnnotScore(dc, dynamic_cast<AnnotScore *>(element), x1, x2, staff, spanningType, graphic);
         }
+        else if (element->Is(CURVE)) {
+            // For curves we limit support to one value in @staff
+            if (!isFirst) continue;
+            // cast to Curve check in DrawCurve
+            this->DrawCurve(dc, dynamic_cast<Curve *>(element), x1, x2, staff, spanningType, graphic);
+        }
         else if (element->Is(DIR)) {
             // cast to Dir check in DrawControlElementConnector
             this->DrawControlElementConnector(dc, dynamic_cast<Dir *>(element), x1, x2, staff, spanningType, graphic);
@@ -373,6 +382,10 @@ void View::DrawTimeSpanningElement(DeviceContext *dc, Object *element, System *s
         else if (element->Is(HAIRPIN)) {
             // cast to Hairpin check in DrawHairpin
             this->DrawHairpin(dc, dynamic_cast<Hairpin *>(element), x1, x2, staff, spanningType, graphic);
+        }
+        else if (element->Is(LINE)) {
+            // cast to Line check in DrawLine
+            this->DrawLine(dc, dynamic_cast<Line *>(element), x1, x2, staff, spanningType, graphic);
         }
         else if (element->Is(LV)) {
             // For ties we limit support to one value in @staff
@@ -645,6 +658,242 @@ void View::DrawBracketSpan(
     }
     else {
         dc->EndGraphic(bracketSpan, this);
+    }
+}
+
+void View::DrawCurve(DeviceContext *dc, Curve *curve, int x1, int x2, Staff *staff, char spanningType, Object *graphic)
+{
+    assert(dc);
+    assert(curve);
+    assert(staff);
+
+    LayerElement *start = curve->GetStart();
+    LayerElement *end = curve->GetEnd();
+    assert(start && end);
+
+    const int staffSize = staff->m_drawingStaffSize;
+    const int unit = m_doc->GetDrawingUnit(staffSize);
+    const bool below = curve->IsBelow();
+
+    // The curve starts and ends a little above (or below) the elements it connects
+    auto getAnchorY = [this, staff, staffSize, unit, below](const LayerElement *element) {
+        const int margin = 3 * unit / 2;
+        if (element->IsAnyOf(std::array{ NOTE, CHORD })) {
+            return below ? element->GetDrawingBottom(m_doc, staffSize) - margin
+                         : element->GetDrawingTop(m_doc, staffSize) + margin;
+        }
+        if (element->HasSelfBB() && !element->Is(TIMESTAMP_ATTR)) {
+            return below ? element->GetSelfBottom() - margin : element->GetSelfTop() + margin;
+        }
+        const int staffTop = staff->GetDrawingY();
+        const int staffBottom = staffTop - m_doc->GetDrawingStaffSize(staffSize);
+        return below ? staffBottom - 2 * margin : staffTop + 2 * margin;
+    };
+
+    Point p1(x1, 0);
+    Point p2(x2, 0);
+    switch (spanningType) {
+        case SPANNING_START_END:
+            p1.y = getAnchorY(start);
+            p2.y = getAnchorY(end);
+            break;
+        case SPANNING_START:
+            p1.y = getAnchorY(start);
+            p2.y = p1.y;
+            break;
+        case SPANNING_END:
+            p2.y = getAnchorY(end);
+            p1.y = p2.y;
+            break;
+        default: {
+            // Systems in between - neither the start nor the end are in the system
+            const int staffTop = staff->GetDrawingY();
+            p1.y = below ? staffTop - m_doc->GetDrawingStaffSize(staffSize) - 3 * unit : staffTop + 3 * unit;
+            p2.y = p1.y;
+            break;
+        }
+    }
+
+    this->CalcOffsetSpanningStartY(dc, p1.y, spanningType);
+    this->CalcOffsetSpanningEndY(dc, p2.y, spanningType);
+
+    Point c1, c2;
+    curve->CalcControlPoints(m_doc, staffSize, p1, p2, c1, c2);
+
+    int lineWidth = m_doc->GetDrawingStemWidth(staffSize);
+    if (curve->HasLwidth()) lineWidth = this->GetLineWidth(curve->GetLwidth(), lineWidth, staffSize);
+
+    data_LINESTARTENDSYMBOL startSym = LINESTARTENDSYMBOL_NONE;
+    data_LINESTARTENDSYMBOL endSym = LINESTARTENDSYMBOL_NONE;
+    if ((spanningType == SPANNING_START) || (spanningType == SPANNING_START_END)) startSym = curve->GetLstartsym();
+    if ((spanningType == SPANNING_END) || (spanningType == SPANNING_START_END)) endSym = curve->GetLendsym();
+    const int startSymSize = curve->GetLstartsymSize();
+    const int endSymSize = curve->GetLendsymSize();
+
+    // The direction of the curve at its ends, needed for the symbols
+    const double startAngle = atan2(p1.y - c1.y, p1.x - c1.x);
+    const double endAngle = atan2(p2.y - c2.y, p2.x - c2.x);
+
+    // Shorten the curve so that it does not show through the symbols
+    Point bezier[4] = { p1, c1, c2, p2 };
+    auto lerp
+        = [](const Point &a, const Point &b, double t) { return Point(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t); };
+    auto trim = [&lerp](Point points[4], int inset, bool atEnd) {
+        if (inset <= 0) return;
+        const Point &tip = atEnd ? points[3] : points[0];
+        double t = atEnd ? 1.0 : 0.0;
+        for (int i = 1; i <= 100; ++i) {
+            t = atEnd ? 1.0 - i / 100.0 : i / 100.0;
+            const Point point = BoundingBox::CalcPointAtBezier(points, t);
+            if (BoundingBox::CalcDistance(point, tip) >= inset) break;
+        }
+        // Split the curve at t (de Casteljau) and keep the part away from the tip
+        const Point p01 = lerp(points[0], points[1], t);
+        const Point p12 = lerp(points[1], points[2], t);
+        const Point p23 = lerp(points[2], points[3], t);
+        const Point p012 = lerp(p01, p12, t);
+        const Point p123 = lerp(p12, p23, t);
+        const Point p0123 = lerp(p012, p123, t);
+        if (atEnd) {
+            points[1] = p01;
+            points[2] = p012;
+            points[3] = p0123;
+        }
+        else {
+            points[0] = p0123;
+            points[1] = p123;
+            points[2] = p23;
+        }
+    };
+    trim(bezier, this->GetLineEndSymbolInset(endSym, staffSize, endSymSize), true);
+    trim(bezier, this->GetLineEndSymbolInset(startSym, staffSize, startSymSize), false);
+
+    /************** draw it **************/
+
+    if (graphic) {
+        dc->ResumeGraphic(graphic, graphic->GetID());
+    }
+    else {
+        dc->StartGraphic(curve, "", curve->GetID(), SPANNING);
+    }
+
+    PenStyle penStyle = PEN_SOLID;
+    int penWidth = lineWidth;
+    switch (curve->GetLform()) {
+        case LINEFORM_dashed: penStyle = PEN_SHORT_DASH; break;
+        case LINEFORM_dotted:
+            penStyle = PEN_DOT;
+            penWidth = lineWidth * 3 / 2;
+            break;
+        // Wavy curves are not supported and drawn as solid curves
+        default: break;
+    }
+
+    Point deviceBezier[4];
+    for (int i = 0; i < 4; ++i) deviceBezier[i] = this->ToDeviceContext(bezier[i]);
+    dc->SetPen(penWidth, penStyle, 0, 0, LINECAP_ROUND);
+    dc->SetBrush(0.0);
+    dc->DrawCubicBezierPath(deviceBezier);
+    dc->ResetBrush();
+    dc->ResetPen();
+
+    this->DrawLineEndSymbol(dc, startSym, p1, startAngle, lineWidth, staffSize, startSymSize);
+    this->DrawLineEndSymbol(dc, endSym, p2, endAngle, lineWidth, staffSize, endSymSize);
+
+    if (graphic) {
+        dc->EndResumedGraphic(graphic, this);
+    }
+    else {
+        dc->EndGraphic(curve, this);
+    }
+}
+
+void View::DrawLine(DeviceContext *dc, Line *line, int x1, int x2, Staff *staff, char spanningType, Object *graphic)
+{
+    assert(dc);
+    assert(line);
+    assert(staff);
+
+    assert(line->GetStart());
+    assert(line->GetEnd());
+
+    const int staffSize = staff->m_drawingStaffSize;
+
+    // The line spans from the left of the first note to the right of the last one
+    if ((spanningType == SPANNING_START_END) || (spanningType == SPANNING_START)) {
+        if (!line->GetStart()->Is(TIMESTAMP_ATTR)) {
+            x1 -= line->GetStart()->GetDrawingRadius(m_doc);
+        }
+    }
+    if ((spanningType == SPANNING_START_END) || (spanningType == SPANNING_END)) {
+        if (!line->GetEnd()->Is(TIMESTAMP_ATTR)) {
+            x2 += line->GetEnd()->GetDrawingRadius(m_doc);
+        }
+    }
+
+    int y1 = line->GetDrawingY();
+    int y2 = y1;
+    this->CalcOffsetSpanningStartY(dc, y1, spanningType);
+    this->CalcOffsetSpanningEndY(dc, y2, spanningType);
+
+    int lineWidth = m_doc->GetDrawingStemWidth(staffSize);
+    if (line->HasWidth()) lineWidth = this->GetLineWidth(line->GetWidth(), lineWidth, staffSize);
+
+    data_LINESTARTENDSYMBOL startSym = LINESTARTENDSYMBOL_NONE;
+    data_LINESTARTENDSYMBOL endSym = LINESTARTENDSYMBOL_NONE;
+    if ((spanningType == SPANNING_START) || (spanningType == SPANNING_START_END)) startSym = line->GetStartsym();
+    if ((spanningType == SPANNING_END) || (spanningType == SPANNING_START_END)) endSym = line->GetEndsym();
+    const int startSymSize = line->GetStartsymSize();
+    const int endSymSize = line->GetEndsymSize();
+
+    const Point p1(x1, y1);
+    const Point p2(x2, y2);
+    const double angle = atan2(y2 - y1, x2 - x1);
+
+    // Shorten the line so that it does not show through the symbols
+    const int startInset = this->GetLineEndSymbolInset(startSym, staffSize, startSymSize);
+    const int endInset = this->GetLineEndSymbolInset(endSym, staffSize, endSymSize);
+    const Point lineStart(x1 + startInset * cos(angle), y1 + startInset * sin(angle));
+    const Point lineEnd(x2 - endInset * cos(angle), y2 - endInset * sin(angle));
+
+    /************** draw it **************/
+
+    if (graphic) {
+        dc->ResumeGraphic(graphic, graphic->GetID());
+    }
+    else {
+        dc->StartGraphic(line, "", line->GetID(), SPANNING);
+    }
+
+    if (line->GetForm() == LINEFORM_wavy) {
+        this->DrawWavyLine(dc, lineStart, lineEnd, lineWidth, staffSize);
+    }
+    else {
+        PenStyle penStyle = PEN_SOLID;
+        LineCapStyle lineCapStyle = LINECAP_BUTT;
+        int penWidth = lineWidth;
+        if (line->GetForm() == LINEFORM_dashed) {
+            penStyle = PEN_LONG_DASH;
+        }
+        else if (line->GetForm() == LINEFORM_dotted) {
+            penStyle = PEN_DOT;
+            lineCapStyle = LINECAP_ROUND;
+            penWidth = lineWidth * 3 / 2;
+        }
+        dc->SetPen(penWidth, penStyle, 0, 0, lineCapStyle);
+        dc->DrawLine(this->ToDeviceContextX(lineStart.x), this->ToDeviceContextY(lineStart.y),
+            this->ToDeviceContextX(lineEnd.x), this->ToDeviceContextY(lineEnd.y));
+        dc->ResetPen();
+    }
+
+    this->DrawLineEndSymbol(dc, startSym, p1, angle + M_PI, lineWidth, staffSize, startSymSize);
+    this->DrawLineEndSymbol(dc, endSym, p2, angle, lineWidth, staffSize, endSymSize);
+
+    if (graphic) {
+        dc->EndResumedGraphic(graphic, this);
+    }
+    else {
+        dc->EndGraphic(line, this);
     }
 }
 
@@ -1271,6 +1520,33 @@ void View::DrawControlElementConnector(
     this->CalcOffsetY(dc, y);
 
     const int unit = m_doc->GetDrawingUnit(staff->m_drawingStaffSize);
+
+    // The line form and the symbols at the ends of the line (dir, dynam and tempo)
+    data_LINEFORM lineForm = LINEFORM_NONE;
+    int lineWidth = width;
+    const AttLineRendBase *lineRendBase = dynamic_cast<const AttLineRendBase *>(element);
+    if (lineRendBase) {
+        lineForm = lineRendBase->GetLform();
+        if (lineRendBase->HasLwidth()) {
+            lineWidth = this->GetLineWidth(lineRendBase->GetLwidth(), width, staff->m_drawingStaffSize);
+        }
+    }
+    data_LINESTARTENDSYMBOL startSym = LINESTARTENDSYMBOL_NONE;
+    data_LINESTARTENDSYMBOL endSym = LINESTARTENDSYMBOL_NONE;
+    int startSymSize = 0;
+    int endSymSize = 0;
+    const AttLineRend *lineRend = dynamic_cast<const AttLineRend *>(element);
+    if (lineRend) {
+        if ((spanningType == SPANNING_START) || (spanningType == SPANNING_START_END)) {
+            startSym = lineRend->GetLstartsym();
+            startSymSize = lineRend->GetLstartsymSize();
+        }
+        if ((spanningType == SPANNING_END) || (spanningType == SPANNING_START_END)) {
+            endSym = lineRend->GetLendsym();
+            endSymSize = lineRend->GetLendsymSize();
+        }
+    }
+
     // the length of the dash and the space between them - can be made a parameter
     const int dashSpace = m_doc->GetDrawingStaffSize(staff->m_drawingStaffSize) * 5 / 3;
     const int minDashSpace = m_doc->GetOptions()->m_extenderLineMinSpace.GetValue() * unit;
@@ -1314,11 +1590,53 @@ void View::DrawControlElementConnector(
         element->GetCurrentFloatingPositioner()->SetDrawingExtenderWidth(dist);
     }
 
-    for (int i = 0; i < nbDashes; ++i) {
-        int x = x1 + margin + (i * dashSpace);
-        x = std::max(x, x1);
+    if ((lineForm == LINEFORM_solid) || (lineForm == LINEFORM_dotted) || (lineForm == LINEFORM_wavy)) {
+        // Continuous lines start a little after the text and are vertically centered on it
+        const bool hasText = element->GetCurrentFloatingPositioner()->HasContentBB();
+        const int lineX1 = (hasText && ((spanningType == SPANNING_START) || (spanningType == SPANNING_START_END)))
+            ? x1 + unit / 2
+            : x1;
+        const int lineY = (lineForm == LINEFORM_wavy) ? y + unit * 3 / 4 : y;
+        if (x2 - lineX1 >= minDashSpace) {
+            Point start(lineX1, lineY);
+            Point end(x2, lineY);
+            start.x += this->GetLineEndSymbolInset(startSym, staff->m_drawingStaffSize, startSymSize);
+            end.x -= this->GetLineEndSymbolInset(endSym, staff->m_drawingStaffSize, endSymSize);
+            if (lineForm == LINEFORM_wavy) {
+                this->DrawWavyLine(dc, start, end, lineWidth, staff->m_drawingStaffSize);
+            }
+            else {
+                // Dotted lines need round caps and a slightly thicker pen for the dots to be visible
+                if (lineForm == LINEFORM_dotted) {
+                    dc->SetPen(lineWidth * 3 / 2, PEN_DOT, 0, 0, LINECAP_ROUND);
+                }
+                else {
+                    dc->SetPen(lineWidth, PEN_SOLID, 0, 0, LINECAP_BUTT);
+                }
+                dc->DrawLine(this->ToDeviceContextX(start.x), this->ToDeviceContextY(start.y),
+                    this->ToDeviceContextX(end.x), this->ToDeviceContextY(end.y));
+                dc->ResetPen();
+            }
+            this->DrawLineEndSymbol(
+                dc, startSym, Point(lineX1, lineY), M_PI, lineWidth, staff->m_drawingStaffSize, startSymSize);
+            this->DrawLineEndSymbol(
+                dc, endSym, Point(x2, lineY), 0.0, lineWidth, staff->m_drawingStaffSize, endSymSize);
+        }
+    }
+    else {
+        for (int i = 0; i < nbDashes; ++i) {
+            int x = x1 + margin + (i * dashSpace);
+            x = std::max(x, x1);
 
-        this->DrawFilledRectangle(dc, x - halfDashLength, y, x + halfDashLength, y + width);
+            this->DrawFilledRectangle(dc, x - halfDashLength, y, x + halfDashLength, y + width);
+        }
+        if (nbDashes > 0) {
+            const int dashY = y + width / 2;
+            this->DrawLineEndSymbol(dc, startSym, Point(x1 + margin - halfDashLength, dashY), M_PI, lineWidth,
+                staff->m_drawingStaffSize, startSymSize);
+            this->DrawLineEndSymbol(dc, endSym, Point(x1 + margin + (nbDashes - 1) * dashSpace + halfDashLength, dashY),
+                0.0, lineWidth, staff->m_drawingStaffSize, endSymSize);
+        }
     }
 
     if (deactivate) {

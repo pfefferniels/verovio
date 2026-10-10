@@ -631,6 +631,7 @@ enum data_ENCLOSURE : int8_t {
     ENCLOSURE_paren,
     ENCLOSURE_brack,
     ENCLOSURE_box,
+    ENCLOSURE_circle,
     ENCLOSURE_none,
     ENCLOSURE_MAX
 };

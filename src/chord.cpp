@@ -74,6 +74,7 @@ Chord::Chord()
     , AttChordVis()
     , AttColor()
     , AttCue()
+    , AttEnclosingChars()
     , AttGraced()
     , AttStems()
     , AttStemsCmn()
@@ -84,6 +85,7 @@ Chord::Chord()
     this->RegisterAttClass(ATT_CHORDVIS);
     this->RegisterAttClass(ATT_COLOR);
     this->RegisterAttClass(ATT_CUE);
+    this->RegisterAttClass(ATT_ENCLOSINGCHARS);
     this->RegisterAttClass(ATT_GRACED);
     this->RegisterAttClass(ATT_STEMS);
     this->RegisterAttClass(ATT_STEMSCMN);
@@ -107,6 +109,7 @@ void Chord::Reset()
     this->ResetChordVis();
     this->ResetColor();
     this->ResetCue();
+    this->ResetEnclosingChars();
     this->ResetGraced();
     this->ResetStems();
     this->ResetStemsCmn();

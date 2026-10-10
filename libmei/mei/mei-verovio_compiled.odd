@@ -1218,6 +1218,9 @@
         <valItem ident="box">
           <desc xml:lang="en">Box.</desc>
         </valItem>
+        <valItem ident="circle">
+          <desc xml:lang="en">Circle.</desc>
+        </valItem>
         <valItem ident="none">
           <desc xml:lang="en">None.</desc>
         </valItem>
@@ -19305,6 +19308,7 @@
     <classes xmlns:xi="http://www.w3.org/2001/XInclude">
       <memberOf key="att.color"/>
       <memberOf key="att.curvature"/>
+      <memberOf key="att.lineRend"/>
       <memberOf key="att.lineRend.base"/>
       <memberOf key="att.visualOffset"/>
       <memberOf key="att.visualOffset2"/>

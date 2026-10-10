@@ -11,6 +11,13 @@
   wherever the clock falls, a beam it goes through being drawn across the break - with `measure` to
   keep breaking at the barlines only
 * Fix MusicXML `circle-x` notehead mapping to SMuFL U+E0B3
+* Support for `line` (with `@form` including `wavy`, `@startsym` and `@endsym`) drawn above or below the staff
+* Support for `curve` (with `@curvedir`, `@bulge` and `@lform`) between two events, with `@lstartsym` and
+  `@lendsym` arrow heads through the Verovio MEI customization
+* Support for `@lform` (`wavy`, `solid`, `dotted`), `@lstartsym` and `@lendsym` on `dir`, `dynam` and `tempo`
+  extender lines
+* Support for `@head.mod` `circle`, `box` and `brack` on `note`, and for `@enclose` on `note` and `chord`,
+  with a `circle` value added to `data.ENCLOSURE` in the Verovio MEI customization
 
 ## [6.3.0] – 2026-08-19
 * Support for `volta` and `refrain`

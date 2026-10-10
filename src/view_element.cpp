@@ -629,6 +629,30 @@ void View::DrawChord(DeviceContext *dc, LayerElement *element, Layer *layer, Sta
 
     this->DrawLayerChildren(dc, chord, layer, staff, measure);
 
+    /************ Enclosure around the noteheads ************/
+
+    if (chord->HasEnclose() && (chord->GetEnclose() != ENCLOSURE_none)) {
+        const int staffSize = staff->m_drawingStaffSize;
+        const bool drawingCueSize = chord->GetDrawingCueSize();
+        int x1 = VRV_UNSET;
+        int x2 = VRV_UNSET;
+        for (const Object *child : chord->GetList()) {
+            const Note *note = vrv_cast<const Note *>(child);
+            assert(note);
+            const int noteX = note->GetDrawingX();
+            const int noteWidth = 2 * note->GetDrawingRadius(m_doc);
+            x1 = (x1 == VRV_UNSET) ? noteX : std::min(x1, noteX);
+            x2 = (x2 == VRV_UNSET) ? noteX + noteWidth : std::max(x2, noteX + noteWidth);
+        }
+        if (x1 != VRV_UNSET) {
+            int unit = m_doc->GetDrawingUnit(staffSize);
+            if (drawingCueSize) unit = m_doc->GetCueSize(unit);
+            const int y1 = chord->GetBottomNote()->GetDrawingY() - unit;
+            const int y2 = chord->GetTopNote()->GetDrawingY() + unit;
+            this->DrawEnclosure(dc, x1, y1, x2, y2, chord->GetEnclose(), staffSize, drawingCueSize);
+        }
+    }
+
     dc->EndGraphic(chord, this);
 }
 
@@ -1646,16 +1670,46 @@ void View::DrawNote(DeviceContext *dc, LayerElement *element, Layer *layer, Staf
 
             this->DrawSmuflCode(dc, x, y, fontNo, staff->m_drawingStaffSize, drawingCueSize, true);
 
-            // handle notehead enclosure
+            // handle notehead enclosure, given by @head.mod or by @enclose
+            data_ENCLOSURE enclosure = ENCLOSURE_NONE;
+            switch (note->GetHeadMod()) {
+                case NOTEHEADMODIFIER_paren: enclosure = ENCLOSURE_paren; break;
+                case NOTEHEADMODIFIER_brack: enclosure = ENCLOSURE_brack; break;
+                case NOTEHEADMODIFIER_box: enclosure = ENCLOSURE_box; break;
+                case NOTEHEADMODIFIER_circle: enclosure = ENCLOSURE_circle; break;
+                default: break;
+            }
+            if (note->HasEnclose()) enclosure = note->GetEnclose();
+            switch (enclosure) {
+                case ENCLOSURE_paren: {
+                    this->DrawSmuflCode(dc, x - note->GetDrawingRadius(m_doc), y, SMUFL_E26A_accidentalParensLeft,
+                        staff->m_drawingStaffSize, drawingCueSize, true);
+                    this->DrawSmuflCode(dc, x + note->GetDrawingRadius(m_doc) * 2, y, SMUFL_E26B_accidentalParensRight,
+                        staff->m_drawingStaffSize, drawingCueSize, true);
+                    break;
+                }
+                case ENCLOSURE_brack: {
+                    const int bracketWidth = m_doc->GetGlyphWidth(
+                        SMUFL_E26C_accidentalBracketLeft, staff->m_drawingStaffSize, drawingCueSize);
+                    this->DrawSmuflCode(dc, x - bracketWidth, y, SMUFL_E26C_accidentalBracketLeft,
+                        staff->m_drawingStaffSize, drawingCueSize, true);
+                    this->DrawSmuflCode(dc, x + note->GetDrawingRadius(m_doc) * 2, y, SMUFL_E26D_accidentalBracketRight,
+                        staff->m_drawingStaffSize, drawingCueSize, true);
+                    break;
+                }
+                case ENCLOSURE_box:
+                case ENCLOSURE_circle: {
+                    const int width = m_doc->GetGlyphWidth(fontNo, staff->m_drawingStaffSize, drawingCueSize);
+                    const int height = m_doc->GetGlyphHeight(fontNo, staff->m_drawingStaffSize, drawingCueSize);
+                    this->DrawEnclosure(dc, x, y - height / 2, x + width, y + height / 2, enclosure,
+                        staff->m_drawingStaffSize, drawingCueSize);
+                    break;
+                }
+                default: break;
+            }
+
             if (note->HasHeadMod()) {
                 switch (note->GetHeadMod()) {
-                    case NOTEHEADMODIFIER_paren: {
-                        this->DrawSmuflCode(dc, x - note->GetDrawingRadius(m_doc), y, SMUFL_E26A_accidentalParensLeft,
-                            staff->m_drawingStaffSize, drawingCueSize, true);
-                        this->DrawSmuflCode(dc, x + note->GetDrawingRadius(m_doc) * 2, y,
-                            SMUFL_E26B_accidentalParensRight, staff->m_drawingStaffSize, drawingCueSize, true);
-                        break;
-                    }
                     case NOTEHEADMODIFIER_slash:
                     case NOTEHEADMODIFIER_backslash:
                     case NOTEHEADMODIFIER_vline:

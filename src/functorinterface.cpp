@@ -27,6 +27,7 @@
 #include "course.h"
 #include "cpmark.h"
 #include "cursor.h"
+#include "curve.h"
 #include "custos.h"
 #include "dir.h"
 #include "div.h"
@@ -61,6 +62,7 @@
 #include "layerdef.h"
 #include "lb.h"
 #include "ligature.h"
+#include "line.h"
 #include "lv.h"
 #include "lyricelement.h"
 #include "mdiv.h"
@@ -587,6 +589,16 @@ FunctorCode FunctorInterface::VisitCpMarkEnd(CpMark *cpMark)
     return this->VisitControlElementEnd(cpMark);
 }
 
+FunctorCode FunctorInterface::VisitCurve(Curve *curve)
+{
+    return this->VisitControlElement(curve);
+}
+
+FunctorCode FunctorInterface::VisitCurveEnd(Curve *curve)
+{
+    return this->VisitControlElementEnd(curve);
+}
+
 FunctorCode FunctorInterface::VisitDir(Dir *dir)
 {
     return this->VisitControlElement(dir);
@@ -655,6 +667,16 @@ FunctorCode FunctorInterface::VisitHarm(Harm *harm)
 FunctorCode FunctorInterface::VisitHarmEnd(Harm *harm)
 {
     return this->VisitControlElementEnd(harm);
+}
+
+FunctorCode FunctorInterface::VisitLine(Line *line)
+{
+    return this->VisitControlElement(line);
+}
+
+FunctorCode FunctorInterface::VisitLineEnd(Line *line)
+{
+    return this->VisitControlElementEnd(line);
 }
 
 FunctorCode FunctorInterface::VisitLv(Lv *lv)
@@ -1991,6 +2013,16 @@ FunctorCode ConstFunctorInterface::VisitCpMarkEnd(const CpMark *cpMark)
     return this->VisitControlElementEnd(cpMark);
 }
 
+FunctorCode ConstFunctorInterface::VisitCurve(const Curve *curve)
+{
+    return this->VisitControlElement(curve);
+}
+
+FunctorCode ConstFunctorInterface::VisitCurveEnd(const Curve *curve)
+{
+    return this->VisitControlElementEnd(curve);
+}
+
 FunctorCode ConstFunctorInterface::VisitDir(const Dir *dir)
 {
     return this->VisitControlElement(dir);
@@ -2059,6 +2091,16 @@ FunctorCode ConstFunctorInterface::VisitHarm(const Harm *harm)
 FunctorCode ConstFunctorInterface::VisitHarmEnd(const Harm *harm)
 {
     return this->VisitControlElementEnd(harm);
+}
+
+FunctorCode ConstFunctorInterface::VisitLine(const Line *line)
+{
+    return this->VisitControlElement(line);
+}
+
+FunctorCode ConstFunctorInterface::VisitLineEnd(const Line *line)
+{
+    return this->VisitControlElementEnd(line);
 }
 
 FunctorCode ConstFunctorInterface::VisitLv(const Lv *lv)

@@ -36,6 +36,8 @@ Tempo::Tempo()
     , TimeSpanningInterface()
     , AttExtender()
     , AttLang()
+    , AttLineRend()
+    , AttLineRendBase()
     , AttMidiTempo()
     , AttMmTempo()
 {
@@ -43,6 +45,8 @@ Tempo::Tempo()
     this->RegisterInterface(TimeSpanningInterface::GetAttClasses(), TimeSpanningInterface::IsInterface());
     this->RegisterAttClass(ATT_EXTENDER);
     this->RegisterAttClass(ATT_LANG);
+    this->RegisterAttClass(ATT_LINEREND);
+    this->RegisterAttClass(ATT_LINERENDBASE);
     this->RegisterAttClass(ATT_MIDITEMPO);
     this->RegisterAttClass(ATT_MMTEMPO);
 
@@ -58,6 +62,8 @@ void Tempo::Reset()
     TimeSpanningInterface::Reset();
     this->ResetExtender();
     this->ResetLang();
+    this->ResetLineRend();
+    this->ResetLineRendBase();
     this->ResetMidiTempo();
     this->ResetMmTempo();
 }
